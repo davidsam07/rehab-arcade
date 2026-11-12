@@ -5,7 +5,7 @@ Uso:
 
 Todo se controla sin tocar el ordenador: los botones se pulsan dejando el
 dedo índice encima un momento. También hay atajos de teclado:
-    1 / 2   elegir modo en el menú
+    1 / 2   elegir modo en el menú (1-5 para elegir canción)
     ENTER   saltar instrucciones / volver al menú desde resultados
     M       quitar / poner la música
     F       pantalla completa
@@ -21,21 +21,48 @@ import cv2
 import config
 from rehab import audio, ui
 from rehab.games import GAMES
+from rehab.games.finger_piano import FingerPiano
 from rehab.report import chart_image, save_report
 from rehab.session import save_session
+from rehab.songs import SONGS
 from rehab.vision import Tracker, draw_hand, to_px
 
 W, H = config.CAMERA_WIDTH, config.CAMERA_HEIGHT
 INDEX_TIP = 8
 
 MENU_BUTTONS = [
-    ui.Button("hombro", "1. HOMBRO", (int(W * 0.08), int(H * 0.35), int(W * 0.46), int(H * 0.65)),
-              sublabel="Fruit Ninja - rango de movimiento"),
-    ui.Button("mano", "2. MANO", (int(W * 0.54), int(H * 0.35), int(W * 0.92), int(H * 0.65)),
-              sublabel="Piano de dedos - motricidad fina"),
-    ui.Button("salir", "Salir", (int(W * 0.40), int(H * 0.75), int(W * 0.60), int(H * 0.87)), color=ui.RED),
+    ui.Button("hombro", "Hombro", (int(W * 0.08), int(H * 0.34), int(W * 0.47), int(H * 0.74)),
+              sublabel="Fruit Ninja: alcanza las frutas", icon="fruit", color=ui.ORANGE, hint="tecla 1"),
+    ui.Button("mano", "Mano", (int(W * 0.53), int(H * 0.34), int(W * 0.92), int(H * 0.74)),
+              sublabel="Piano de dedos: toca canciones", icon="piano", color=ui.CYAN, hint="tecla 2"),
+    ui.Button("salir", "Salir", (int(W * 0.42), int(H * 0.80), int(W * 0.58), int(H * 0.91)), color=ui.RED),
 ]
-BACK_BUTTON = ui.Button("menu", "Menu", (int(W * 0.78), int(H * 0.62), int(W * 0.96), int(H * 0.80)))
+
+
+def _song_buttons():
+    """Tarjetas de canciones: 3 arriba y 2 abajo, con el botón de volver."""
+    buttons = []
+    cw, ch, gap = int(W * 0.27), int(H * 0.29), int(W * 0.035)
+    rows = [list(SONGS.values())[:3], list(SONGS.values())[3:]]
+    for r, songs in enumerate(rows):
+        total = len(songs) * cw + (len(songs) - 1) * gap
+        x = (W - total) // 2
+        y = int(H * 0.24) + r * (ch + int(H * 0.04))
+        for song in songs:
+            n = len(buttons) + 1
+            buttons.append(ui.Button(song.key, song.title, (x, y, x + cw, y + ch), sublabel=song.subtitle,
+                                     icon=song.icon, tag=song.mood, hint=f"tecla {n}",
+                                     color=ui.GOLD if song.christmas else ui.CYAN))
+            x += cw + gap
+    return buttons
+
+
+SONG_BUTTONS = _song_buttons()
+BACK_SONGS = ui.Button("volver", "Volver", (int(W * 0.03), int(H * 0.86), int(W * 0.17), int(H * 0.96)),
+                       color=ui.GREY)
+AGAIN_BUTTON = ui.Button("otra", "Otra vez", (int(W * 0.62), int(H * 0.60), int(W * 0.96), int(H * 0.75)),
+                         color=ui.GREEN)
+BACK_BUTTON = ui.Button("menu", "Menú", (int(W * 0.62), int(H * 0.79), int(W * 0.96), int(H * 0.94)))
 
 
 def parse_args():
@@ -72,23 +99,47 @@ def hand_pointer(tracker, frame):
     return to_px(hand[INDEX_TIP], W, H)
 
 
-def draw_menu(frame, patient, progress):
-    ui.panel(frame, 0, 0, W, H, alpha=0.35)
-    ui.put_text(frame, "REHAB ARCADE", (W // 2, int(H * 0.14)), 2.0, ui.CYAN, 4, center=True)
-    ui.put_text(frame, f"Paciente: {patient}", (W // 2, int(H * 0.22)), 0.9, ui.WHITE, 2, center=True)
-    ui.put_text(frame, "Deja el dedo indice sobre un boton para elegirlo", (W // 2, int(H * 0.29)),
-                0.7, ui.GREY, 1, center=True)
+def footer(frame, text):
+    ui.put_text(frame, text, (W // 2, H - 18), 0.55, (200, 200, 200), 1, center=True)
+
+
+def draw_menu(frame, patient, progress, snow=None, dt=0.0):
+    ui.dim(frame, 0.55)
+    if snow:
+        snow.draw(frame, dt)
+    ui.put_text(frame, "Rehab Arcade", (W // 2, int(H * 0.15)), 2.1, ui.WHITE, 2, center=True)
+    ui.put_text(frame, f"Hola, {patient}. ¿Qué quieres entrenar hoy?", (W // 2, int(H * 0.25)), 0.95,
+                ui.YELLOW, 2, center=True)
     for button in MENU_BUTTONS:
         button.draw(frame, progress.get(button.key, 0.0))
+    footer(frame, "Deja el dedo índice quieto sobre un botón para elegirlo   ·   F: pantalla completa   ·   ESC: salir")
 
 
-def draw_results(frame, game, lines, chart, progress):
-    ui.panel(frame, 0, 0, W, H, alpha=0.75)
-    ui.put_text(frame, f"RESULTADOS - {game.title}", (W // 2, 60), 1.3, ui.CYAN, 3, center=True)
+def draw_songs(frame, progress, snow=None, dt=0.0):
+    ui.dim(frame, 0.6)
+    if snow:
+        snow.draw(frame, dt)
+    ui.put_text(frame, "Elige una canción", (W // 2, int(H * 0.12)), 1.6, ui.WHITE, 2, center=True)
+    ui.put_text(frame, "Las notas caerán al ritmo de la música", (W // 2, int(H * 0.19)), 0.8, ui.GOLD, 2,
+                center=True)
+    for button in SONG_BUTTONS + [BACK_SONGS]:
+        button.draw(frame, progress.get(button.key, 0.0))
+    footer(frame, "Teclas 1-5 para elegir   ·   ESC: volver")
+
+
+def draw_results(frame, game, patient, lines, chart, progress):
+    ui.dim(frame, 0.78)
+    ui.put_text(frame, f"¡Buen trabajo, {patient}!", (W // 2, 62), 1.4, ui.YELLOW, 2, center=True)
+    ui.put_text(frame, game.title, (W // 2, 102), 0.75, ui.CYAN, 2, center=True)
+    line_h = 36
+    card = (40, 125, W - 40, 125 + 26 + line_h * len(lines))
+    ui.rounded_rect(frame, card, 22, ui.DARK, 0.9)
     for i, line in enumerate(lines):
-        ui.put_text(frame, line, (60, 120 + i * 40), 0.75, ui.WHITE, 2)
-    y0 = H - chart.shape[0] - 20
-    frame[y0:y0 + chart.shape[0], 40:40 + chart.shape[1]] = chart
+        ui.put_text(frame, line, (70, card[1] + 44 + i * line_h), 0.68, ui.WHITE, 2, shadow=False)
+    ch, cw = chart.shape[:2]
+    y0 = min(H - ch - 20, card[3] + 18)
+    frame[y0:y0 + ch, 40:40 + cw] = chart
+    AGAIN_BUTTON.draw(frame, progress.get("otra", 0.0))
     BACK_BUTTON.draw(frame, progress.get("menu", 0.0))
 
 
@@ -98,6 +149,7 @@ def main():
     cap = open_camera(args.camara)
     tracker = Tracker(config.POSE_MODEL, config.HAND_MODEL)
     selector = ui.DwellSelector(config.DWELL_TIME)
+    snow = ui.Snow(70) if config.SNOW else None
     audio.mixer.start()
 
     cv2.namedWindow(config.WINDOW_NAME, cv2.WINDOW_NORMAL)
@@ -106,6 +158,7 @@ def main():
 
     state = "menu"
     game = None
+    hand_calibration = None      # medida de la mano: se reutiliza entre canciones
     result_lines, chart = [], None
     last = time.monotonic()
 
@@ -121,11 +174,18 @@ def main():
             last = now
             choice = None
 
-            if state == "menu":
+            if state in ("menu", "songs", "results"):
                 pointer = hand_pointer(tracker, frame)
-                selected, progress = selector.update(MENU_BUTTONS, pointer, now)
-                draw_menu(frame, args.paciente, progress)
-                ui.draw_pointer(frame, pointer)
+                buttons = {"menu": MENU_BUTTONS, "songs": SONG_BUTTONS + [BACK_SONGS],
+                           "results": [AGAIN_BUTTON, BACK_BUTTON]}[state]
+                selected, progress = selector.update(buttons, pointer, now)
+                if state == "menu":
+                    draw_menu(frame, args.paciente, progress, snow, dt)
+                elif state == "songs":
+                    draw_songs(frame, progress, snow, dt)
+                else:
+                    draw_results(frame, game, args.paciente, result_lines, chart, progress)
+                ui.draw_pointer(frame, pointer, max(progress.values(), default=0.0))
                 choice = selected.key if selected else None
 
             elif state == "game":
@@ -135,22 +195,16 @@ def main():
                     landmarks = tracker.detect_hand(frame)
                 game.update(frame, landmarks, dt)
                 if game.finished:
-                    audio.mixer.set_music(None)
+                    audio.mixer.stop_all()
+                    if isinstance(game, FingerPiano) and game.calibration_data():
+                        hand_calibration = game.calibration_data()
                     result_lines, row = game.results()
                     csv_path = save_session(game.key, row)
                     save_report(game.key, args.paciente)
-                    chart = chart_image(game.key, args.paciente, size=(7.0, 3.0))
+                    chart = chart_image(game.key, args.paciente, size=(7.0, 2.9))
                     print(f"Sesión guardada en {csv_path}")
                     selector.reset()
                     state = "results"
-
-            elif state == "results":
-                pointer = hand_pointer(tracker, frame)
-                selected, progress = selector.update([BACK_BUTTON], pointer, now)
-                draw_results(frame, game, result_lines, chart, progress)
-                ui.draw_pointer(frame, pointer)
-                if selected:
-                    state = "menu"
 
             cv2.imshow(config.WINDOW_NAME, frame)
             key = cv2.waitKey(1) & 0xFF
@@ -158,11 +212,13 @@ def main():
             if key == 27:  # ESC
                 if state == "menu":
                     break
+                if state == "game" and isinstance(game, FingerPiano) and game.calibration_data():
+                    hand_calibration = game.calibration_data()
                 state = "menu"  # abandonar partida sin guardar
-                audio.mixer.set_music(None)
+                audio.mixer.stop_all()
                 selector.reset()
             elif key in (ord("m"), ord("M")):
-                print("Musica", "activada" if audio.mixer.toggle_music() else "desactivada")
+                print("Música", "activada" if audio.mixer.toggle_music() else "desactivada")
             elif key in (ord("f"), ord("F")):
                 fullscreen = not fullscreen
                 cv2.setWindowProperty(config.WINDOW_NAME, cv2.WND_PROP_FULLSCREEN,
@@ -171,15 +227,26 @@ def main():
                 if state == "game":
                     game.skip_intro()
                 elif state == "results":
-                    state = "menu"
-            elif state == "menu" and key == ord("1"):
-                choice = "hombro"
-            elif state == "menu" and key == ord("2"):
-                choice = "mano"
+                    choice = "menu"
+            elif state == "menu" and key in (ord("1"), ord("2")):
+                choice = "hombro" if key == ord("1") else "mano"
+            elif state == "songs" and ord("1") <= key < ord("1") + len(SONGS):
+                choice = list(SONGS)[key - ord("1")]
 
             if choice == "salir":
                 break
-            if choice in GAMES:
+            if choice == "otra":  # repetir: el piano vuelve a elegir canción, el hombro empieza otra partida
+                choice = "mano" if isinstance(game, FingerPiano) else game.key
+            if choice in ("menu", "volver"):
+                state = "menu"
+                selector.reset()
+            elif choice == "mano":
+                state = "songs"
+                selector.reset()
+            elif choice in SONGS:
+                game = FingerPiano(args.paciente, choice, hand_calibration)
+                state = "game"
+            elif choice in GAMES:
                 game = GAMES[choice](args.paciente)
                 state = "game"
 

@@ -14,9 +14,11 @@ IPM, Práctica 2: IPM mediante visión por computador.
 
 ### 2. Mano: Piano de dedos
 - **Calibración guiada (pensada para personas mayores):** paso a paso, sin prisa. En cada paso se iluminan sobre la propia mano los dos dedos que hay que juntar, el juego espera a que el paciente lo intente y le pide mantenerlo 3 segundos. Si no llega a cerrar la pinza, se mide igualmente su mejor intento. Así los umbrales se ajustan a la movilidad de cada dedo.
-- **Juego:** las notas caen por 4 carriles (índice, corazón, anular y meñique) y el dedo que toca se ilumina en la mano justo antes. Cuando la nota llega a la línea, el paciente junta el pulgar con ese dedo.
-- **Música:** cada acierto toca la siguiente nota del *Himno de la alegría* (Beethoven, dominio público), con una base musical de fondo. Si el paciente acierta seguido, oye la canción entera.
-- **Adaptativo:** la velocidad depende de la precisión reciente, y los dedos que más fallan reciben más notas.
+- **Canciones:** el paciente elige entre *Jingle Bells*, *Noche de paz*, *We Wish You a Merry Christmas*, *Deck the Halls* y el *Himno de la alegría* (todas de dominio público). La medida de la mano se guarda durante la sesión, así que al cambiar de canción no hay que volver a calibrar.
+- **Juego a ritmo:** las notas caen al compás de la canción por 4 carriles (índice, corazón, anular y meñique), como en un piano: las notas graves van al índice y las agudas al meñique. Cuando la nota llega a la línea, el paciente junta el pulgar con ese dedo y suena esa nota de la melodía. Las notas que van demasiado seguidas las toca el ordenador, así la canción nunca se corta.
+- **Música:** todo se sintetiza con numpy (piano, bajo y acordes), sin archivos de audio. El acompañamiento se programa con unas décimas de antelación para que vaya a tempo aunque la cámara dé algún tirón.
+- **Adaptativo:** si acierta, la canción va más rápida y le tocan más notas; si le cuesta, va más lenta y con más espacio entre notas. Además, los dedos que más fallan reciben más notas.
+- **Pinza robusta:** solo cuenta un dedo a la vez, con histéresis para que el temblor no dé dobles pulsaciones. La pinza se suelta en cuanto el dedo se separa un poco de su punto más cerrado (no hace falta abrir la mano del todo), y si otro dedo se cierra claramente más, se cambia a ese dedo.
 - **Métrica:** distancia pulgar–dedo dividida por el tamaño de la mano (MediaPipe Hands). Así no importa lo cerca que esté la mano de la cámara.
 
 Cada partida se guarda en `data/hombro.csv` o `data/mano.csv`. Al acabar se muestra una gráfica con la evolución del paciente, que también se guarda en `data/informes/`.
@@ -62,6 +64,7 @@ El juego se maneja **sin tocar el ordenador**: para pulsar un botón, deja el de
 | Tecla | Acción |
 |---|---|
 | `1` / `2` | Elegir modo en el menú |
+| `1` - `5` | Elegir canción |
 | `ENTER` | Saltar instrucciones / volver al menú |
 | `M` | Quitar / poner la música |
 | `F` | Pantalla completa |
@@ -79,8 +82,9 @@ rehab-arcade/
 └── rehab/
     ├── vision.py            # MediaPipe Pose y Hands (modo VIDEO)
     ├── geometry.py          # Ángulos y distancias
-    ├── ui.py                # Textos, paneles y botones por "dwell"
-    ├── audio.py             # Música y efectos generados con numpy (sin archivos)
+    ├── ui.py                # Textos con tildes (Pillow), tarjetas, botones por "dwell", iconos y nieve
+    ├── audio.py             # Piano, acompañamiento y efectos generados con numpy (sin archivos)
+    ├── songs.py             # Canciones del piano: melodía y acordes escritos nota a nota
     ├── session.py           # Historial en CSV
     ├── report.py            # Gráficas de evolución (matplotlib)
     └── games/

@@ -120,10 +120,10 @@ class ShoulderNinja(Minigame):
     # --------------------------------------------------------------- intro
     def intro_lines(self):
         return [
-            "MODO HOMBRO - Fruit Ninja",
-            "Colocate para que se te vea de cintura para arriba.",
+            "Hombro - Fruit Ninja",
+            "Colócate para que se te vea de cintura para arriba.",
             "Corta cada fruta con la mano de SU lado.",
-            "Saldran en el limite de lo que alcanzas: estira un poco mas!",
+            "Saldrán en el límite de lo que alcanzas: ¡estira un poco más!",
         ]
 
     def draw_landmarks(self, frame, landmarks):
@@ -134,11 +134,10 @@ class ShoulderNinja(Minigame):
     def update_calibration(self, frame, landmarks, dt):
         h, w = frame.shape[:2]
         arms = read_arms(landmarks, w, h)
-        ui.message_box(frame, ["CALIBRACION", "Sube los dos brazos por los lados", "lo mas alto que puedas"],
-                       y_center=int(h * 0.2), scale=0.9)
-
+        lines = ["Sube los dos brazos por los lados", "lo más alto que puedas"]
         if not arms:
-            self.warn_not_detected(frame, "No te veo bien: aparta un poco de la camara")
+            top = ui.instruction_card(frame, "Calibración", lines, accent=ui.CYAN)
+            self.warn_not_detected(frame, "No te veo bien: apártate un poco de la cámara", y=top - 30)
             return False
 
         self.calib_elapsed += dt  # el tiempo solo corre cuando se te ve
@@ -147,7 +146,7 @@ class ShoulderNinja(Minigame):
             self._draw_arm_angle(frame, arm, best=self.calib[side])
 
         progress = self.calib_elapsed / C.CALIB_TIME
-        ui.progress_ring(frame, (w // 2, int(h * 0.85)), 40, progress)
+        ui.instruction_card(frame, "Calibración", lines, progress, accent=ui.CYAN)
 
         if progress >= 1.0:
             for side in self.calib:
@@ -160,7 +159,7 @@ class ShoulderNinja(Minigame):
         record_end = point_at_angle(arm.shoulder, arm.length, best, arm.outward)
         cv2.line(frame, tuple(map(int, arm.shoulder)), tuple(map(int, record_end)), ui.GREY, 2, cv2.LINE_AA)
         label_pos = (arm.shoulder[0] + arm.outward * 30 - (90 if arm.outward < 0 else 0), arm.shoulder[1] - 25)
-        ui.put_text(frame, f"{arm.angle:.0f} gr", label_pos, 0.8, ui.YELLOW, 2)
+        ui.put_text(frame, f"{arm.angle:.0f}°", label_pos, 0.8, ui.YELLOW, 2)
 
     # --------------------------------------------------------------- juego
     def update_game(self, frame, landmarks, dt):
@@ -170,7 +169,7 @@ class ShoulderNinja(Minigame):
         self.draw_landmarks(frame, landmarks)
 
         if not arms:
-            self.warn_not_detected(frame, "No te veo bien: aparta un poco de la camara")
+            self.warn_not_detected(frame, "No te veo bien: apártate un poco de la cámara")
         for side, arm in arms.items():
             self.rom_max[side] = max(self.rom_max[side], arm.angle)
             self._draw_arm_angle(frame, arm, best=self.calib[side])
@@ -271,12 +270,12 @@ class ShoulderNinja(Minigame):
 
         lines = [
             f"Frutas cortadas: {self.hits} de {total}  ({precision:.0f}%)",
-            f"Tiempo medio de reaccion: {reaction:.2f} s",
+            f"Tiempo medio de reacción: {reaction:.2f} s",
         ]
         for side in ("izq", "der"):
             gain = self.rom_max[side] - self.calib[side]
-            lines.append(f"Hombro {SIDE_NAMES[side]}: calibracion {self.calib[side]:.0f} gr  ->  "
-                         f"maximo en juego {self.rom_max[side]:.0f} gr ({gain:+.0f})")
+            lines.append(f"Hombro {SIDE_NAMES[side]}: calibración {self.calib[side]:.0f}°  ->  "
+                         f"máximo en juego {self.rom_max[side]:.0f}° ({gain:+.0f})")
         lines.append(f"Nivel de reto final: {self.challenge * 100:.0f}%")
 
         row = {

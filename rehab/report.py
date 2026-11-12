@@ -13,15 +13,15 @@ from rehab.session import load_history  # noqa: E402
 
 # Qué columnas pintar de cada modo: (título, eje Y, [(columna, etiqueta)])
 CHARTS = {
-    "hombro": ("Rango maximo del hombro por sesion", "grados", [
+    "hombro": ("Rango máximo del hombro por sesión", "grados", [
         ("rom_max_izq", "Brazo izquierdo"),
         ("rom_max_der", "Brazo derecho"),
     ]),
-    "mano": ("Precision por dedo en cada sesion", "% aciertos", [
-        ("prec_indice", "Indice"),
-        ("prec_corazon", "Corazon"),
+    "mano": ("Precisión por dedo en cada sesión", "% aciertos", [
+        ("prec_indice", "Índice"),
+        ("prec_corazon", "Corazón"),
         ("prec_anular", "Anular"),
-        ("prec_menique", "Menique"),
+        ("prec_menique", "Meñique"),
     ]),
 }
 
@@ -36,12 +36,12 @@ def _figure(game_key: str, patient: str, size=(6.4, 3.6)):
         spine.set_color("#888888")
     ax.tick_params(colors="#dddddd")
     ax.set_title(f"{title} - {patient}", color="white", fontsize=11)
-    ax.set_xlabel("Sesion", color="#dddddd")
+    ax.set_xlabel("Sesión", color="#dddddd")
     ax.set_ylabel(ylabel, color="#dddddd")
     ax.grid(alpha=0.2)
 
     if not history:
-        ax.text(0.5, 0.5, "Sin datos todavia", color="white", ha="center", va="center", transform=ax.transAxes)
+        ax.text(0.5, 0.5, "Sin datos todavía", color="white", ha="center", va="center", transform=ax.transAxes)
     else:
         x = np.arange(1, len(history) + 1)
         for column, label in series:
