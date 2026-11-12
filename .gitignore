@@ -1,0 +1,18 @@
+# Modelos de MediaPipe (se descargan con download_models.py)
+models/
+*.task
+
+# Datos de pacientes y gráficas generadas
+data/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Sistema / editores
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
