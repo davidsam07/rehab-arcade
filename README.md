@@ -6,11 +6,12 @@ IPM, Práctica 2: IPM mediante visión por computador.
 
 ## Modos de juego
 
-### 1. Hombro: Fruit Ninja
+### 1. Hombro: Trineo volador
 - **Calibración:** el paciente sube los brazos por los lados todo lo que puede y se guarda el ángulo máximo de cada hombro (su rango de movimiento).
-- **Juego:** aparecen frutas en el límite de ese rango y el paciente las corta con la mano de su lado.
-- **Adaptativo:** si acierta, las frutas salen un poco más arriba y duran menos. Si falla, salen más abajo y duran más.
-- **Métrica:** ángulo del hombro (MediaPipe Pose, puntos hombro y codo respecto a la vertical).
+- **Juego:** un trineo vuela sobre un paisaje nevado. Su altura depende de cuánto levanta los brazos: brazos abajo, trineo abajo; brazos a la altura de su máximo, trineo arriba. Por el cielo llegan grupos de regalos y estrellas a distintas alturas dentro de su rango, así que para recogerlos sube y baja los brazos de forma continua (abducción de hombro).
+- **Ayudas:** una barra a la izquierda muestra la altura de los brazos respecto a su máximo, una flecha indica si tiene que subir o bajar, y una ventanita con la cámara le deja verse. Si no se le ve, el juego se para y no pierde regalos.
+- **Adaptativo:** si recoge casi todo, los regalos salen más arriba (hasta un poco por encima de su máximo, para que estire) y el trineo vuela más rápido. Si le cuesta, salen más bajos y más despacio.
+- **Métrica:** ángulo del hombro (MediaPipe Pose, segmento hombro–codo respecto a la vertical), normalizado por el máximo de la calibración de cada lado.
 
 ### 2. Mano: Piano de dedos
 - **Calibración guiada (pensada para personas mayores):** paso a paso, sin prisa. En cada paso se iluminan sobre la propia mano los dos dedos que hay que juntar, el juego espera a que el paciente lo intente y le pide mantenerlo 3 segundos. Si no llega a cerrar la pinza, se mide igualmente su mejor intento. Así los umbrales se ajustan a la movilidad de cada dedo.
@@ -18,6 +19,7 @@ IPM, Práctica 2: IPM mediante visión por computador.
 - **Juego a ritmo:** las notas caen al compás de la canción por 4 carriles (índice, corazón, anular y meñique), como en un piano: las notas graves van al índice y las agudas al meñique. Cuando la nota llega a la línea, el paciente junta el pulgar con ese dedo y suena esa nota de la melodía. Las notas que van demasiado seguidas las toca el ordenador, así la canción nunca se corta.
 - **Música:** todo se sintetiza con numpy (piano, bajo y acordes), sin archivos de audio. El acompañamiento se programa con unas décimas de antelación para que vaya a tempo aunque la cámara dé algún tirón.
 - **Adaptativo:** si acierta, la canción va más rápida y le tocan más notas; si le cuesta, va más lenta y con más espacio entre notas. Además, los dedos que más fallan reciben más notas.
+- **Notas largas:** las notas que duran mucho tienen cola y hay que **mantener** la pinza hasta que acabe (trabajo isométrico de la pinza). Cuenta como bien si aguanta al menos el 80 %.
 - **Pinza robusta:** solo cuenta un dedo a la vez, con histéresis para que el temblor no dé dobles pulsaciones. La pinza se suelta en cuanto el dedo se separa un poco de su punto más cerrado (no hace falta abrir la mano del todo), y si otro dedo se cierra claramente más, se cambia a ese dedo.
 - **Métrica:** distancia pulgar–dedo dividida por el tamaño de la mano (MediaPipe Hands). Así no importa lo cerca que esté la mano de la cámara.
 
@@ -74,6 +76,7 @@ El juego se maneja **sin tocar el ordenador**: para pulsar un botón, deja el de
 
 ```
 rehab-arcade/
+├── assets/                # Imágenes PNG opcionales (ver assets/LEEME.md)
 ├── main.py                  # Bucle principal: cámara, menú, partida y resultados
 ├── config.py                # Todos los parámetros ajustables
 ├── download_models.py       # Descarga los modelos de MediaPipe
@@ -85,13 +88,19 @@ rehab-arcade/
     ├── ui.py                # Textos con tildes (Pillow), tarjetas, botones por "dwell", iconos y nieve
     ├── audio.py             # Piano, acompañamiento y efectos generados con numpy (sin archivos)
     ├── songs.py             # Canciones del piano: melodía y acordes escritos nota a nota
+    ├── scene.py             # Paisaje nevado con scroll en capas (fondo del trineo y de los menús)
+    ├── assets.py            # Carga de imágenes de assets/ (con dibujo por código si faltan)
     ├── session.py           # Historial en CSV
     ├── report.py            # Gráficas de evolución (matplotlib)
     └── games/
         ├── base.py          # Fases comunes: intro, calibración, cuenta atrás, juego
-        ├── shoulder_ninja.py
-        └── finger_piano.py
+        ├── sleigh_flight.py # Modo hombro: trineo volador
+        └── finger_piano.py  # Modo mano: piano de dedos
 ```
+
+### Imágenes
+
+Las imágenes del juego son opcionales: se ponen como PNG en la carpeta `assets/` y, si falta alguna, el juego la dibuja por código. La lista de nombres y tamaños está en [assets/LEEME.md](assets/LEEME.md).
 
 Para añadir un minijuego nuevo basta con heredar de `Minigame` (`games/base.py`) y registrarlo en `games/__init__.py`.
 

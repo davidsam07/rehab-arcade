@@ -6,11 +6,13 @@
 - Acompañamiento: bajo y acordes de la canción, tocados al mismo tempo que la
   melodía. El juego los programa con unas décimas de antelación
   (Mixer.play_in) para que vayan a ritmo aunque la cámara dé algún tirón.
-- Modo hombro: un bucle suave de acordes (Do - La menor - Fa - Sol).
+- Modo hombro: una canción entera (melodía + acompañamiento) renderizada
+  en un bucle que suena de fondo mientras vuela el trineo.
 
 Un mezclador (Mixer) suma todo en tiempo real con sounddevice. Si el
 ordenador no tiene audio, el juego sigue sin sonido.
 """
+import math
 import threading
 from functools import lru_cache
 
@@ -60,15 +62,6 @@ def _normalize(wave, volume):
     return (volume * wave / peak).astype(np.float32)
 
 
-def pluck(note_or_freq, duration=0.6, volume=1.0, decay=5.0):
-    """Nota corta tipo pizzicato: fundamental + armónicos y caída exponencial."""
-    f = freq(note_or_freq) if isinstance(note_or_freq, str) else note_or_freq
-    t = _t(duration)
-    wave = np.sin(2 * np.pi * f * t) + 0.4 * np.sin(4 * np.pi * f * t) + 0.15 * np.sin(6 * np.pi * f * t)
-    env = np.exp(-decay * t) * np.minimum(1.0, t / 0.005)
-    return (volume * wave * env / 1.55).astype(np.float32)
-
-
 def piano(note_or_freq, duration=1.6, volume=1.0, brightness=1.0):
     """Nota de piano sintetizada (aditiva)."""
     f = freq(note_or_freq) if isinstance(note_or_freq, str) else note_or_freq
@@ -116,50 +109,40 @@ def chime(step: int) -> np.ndarray:
     return piano_note(["C5", "D5", "E5", "F5", "G5", "A5"][step % 6], config.SFX_VOLUME)
 
 
-def pad(notes, duration, volume=1.0):
-    """Acorde sostenido y suave (entra y sale despacio)."""
-    t = _t(duration)
-    wave = sum(np.sin(2 * np.pi * freq(n) * t) for n in notes) / len(notes)
-    fade = 0.3
-    env = np.minimum(1.0, np.minimum(t / fade, (duration - t) / fade))
-    return (volume * wave * env).astype(np.float32)
+def accomp_hits(chord: str, pos_in_bar: int, beats_per_bar: int):
+    """Sonidos del acompañamiento "pum-pa" en un pulso: bajo en el 1, acordes en los demás."""
+    vol = config.MUSIC_VOLUME
+    if pos_in_bar == 0:
+        return [bass_sound(chord, round(vol * 1.6, 3)), chord_sound(chord, round(vol * 1.0, 3))]
+    if beats_per_bar == 4 and pos_in_bar == 2:
+        return [bass_sound(chord, round(vol * 1.3, 3), fifth=True), chord_sound(chord, round(vol * 0.8, 3))]
+    return [chord_sound(chord, round(vol * 0.65, 3))]
 
 
-def background_loop():
-    """Bucle de 8 s para el modo hombro: 4 acordes de 2 s con un arpegio encima."""
-    chords = [
-        ("C3", ["C4", "E4", "G4"]),
-        ("A2", ["A3", "C4", "E4"]),
-        ("F2", ["F3", "A3", "C4"]),
-        ("G2", ["G3", "B3", "D4"]),
-    ]
-    chord_len, step = 2.0, 0.25
-    loop = np.zeros(int(SR * chord_len * len(chords)), dtype=np.float32)
-    for c, (bass, notes) in enumerate(chords):
-        start = int(c * chord_len * SR)
-        block = pad(notes, chord_len, 0.5)
-        block += pluck(bass, chord_len, 0.6, decay=1.5)[:len(block)]
-        pattern = [notes[0], notes[1], notes[2], notes[1]] * 2
-        for i, n in enumerate(pattern):
-            s = int(i * step * SR)
-            f = freq(n) * (2 if i % 4 == 2 else 1)  # la tercera nota, una octava más alta
-            note = pluck(f, 0.5, 0.35, decay=6)
-            end = min(len(block), s + len(note))
-            block[s:end] += note[:end - s]
-        loop[start:start + len(block)] += block
-    loop /= np.max(np.abs(loop)) or 1.0
-    return loop * config.MUSIC_VOLUME
+def render_song(song, tempo=1.0):
+    """Toda la canción (melodía + acompañamiento) en un bucle de audio, para música de fondo."""
+    import bisect
+    spb = 60 / (song.bpm * tempo)
+    n = int(round(song.length * spb * SR))
+    out = np.zeros(n, dtype=np.float32)
 
+    def add(sound, t):  # lo que sobresale por el final vuelve al principio: el bucle no se corta
+        i = int(t * SR) % n
+        end = min(n, i + len(sound))
+        out[i:end] += sound[:end - i]
+        if i + len(sound) > n:
+            rest = sound[end - i:][:n]
+            out[:len(rest)] += rest
 
-def slice_sound():
-    """'Fiuu-pop' al cortar una fruta: barrido de frecuencia + un poco de ruido."""
-    t = _t(0.18)
-    f = np.linspace(1400, 350, len(t))
-    phase = 2 * np.pi * np.cumsum(f) / SR
-    rng = np.random.default_rng(0)
-    wave = 0.7 * np.sin(phase) + 0.3 * rng.uniform(-1, 1, len(t))
-    env = np.exp(-18 * t)
-    return (config.SFX_VOLUME * wave * env).astype(np.float32)
+    for beat, pitch, _ in song.melody:
+        add(piano_note(pitch, config.AUTO_NOTE_VOLUME), beat * spb)
+    starts = [b for b, _, _ in song.chords]
+    for beat in range(int(math.ceil(song.length))):
+        chord = song.chords[max(0, bisect.bisect_right(starts, beat + 1e-6) - 1)][1]
+        for sound in accomp_hits(chord, int((beat - song.pickup) % song.beats_per_bar), song.beats_per_bar):
+            add(sound, beat * spb)
+    np.clip(out, -1.0, 1.0, out=out)
+    return out
 
 
 class Mixer:
@@ -251,12 +234,3 @@ class Mixer:
 
 
 mixer = Mixer()
-_background = None
-
-
-def background():
-    """El bucle de fondo se genera una sola vez y se reutiliza."""
-    global _background
-    if _background is None:
-        _background = background_loop()
-    return _background

@@ -355,7 +355,8 @@ ICONS = {"piano": icon_piano, "fruit": icon_fruit, "bell": icon_bell, "star": ic
 
 # -------------------------------------------------------------------- botones
 class Button:
-    def __init__(self, key, label, rect, color=CYAN, sublabel="", icon=None, tag="", hint=""):
+    def __init__(self, key, label, rect, color=CYAN, sublabel="", icon=None, tag="", hint="", images=()):
+        self.images = images  # imágenes de assets/ que se prueban en orden antes que el icono dibujado
         self.key = key
         self.label = label
         self.sublabel = sublabel
@@ -381,8 +382,12 @@ class Button:
         if active:  # se va rellenando de verde mientras mantiene el dedo
             rounded_rect(img, (x1, y1, x1 + max(48, (x2 - x1) * min(progress, 1.0)), y2), 24, GREEN, 0.35)
         cx, h = (x1 + x2) // 2, y2 - y1
-        has_icon = self.icon in ICONS
-        if has_icon:
+        from rehab import assets  # aquí para evitar una importación circular
+        image = next((name for name in self.images if assets.available(name)), None)
+        has_icon = image is not None or self.icon in ICONS
+        if image is not None:
+            assets.draw(img, image, (cx, y1 + int(h * 0.30)), int((x2 - x1) * 0.6), int(h * 0.42))
+        elif has_icon:
             ICONS[self.icon](img, (cx, y1 + int(h * 0.30)), int(min(h * 0.22, 60)))
         label_y = y1 + int(h * (0.68 if has_icon else 0.5)) + (0 if self.sublabel else 12)
         label_scale = 1.15 if h > 150 else 0.9

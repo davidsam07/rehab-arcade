@@ -1,7 +1,7 @@
 from rehab.games.finger_piano import FingerPiano
-from rehab.games.shoulder_ninja import ShoulderNinja
+from rehab.games.sleigh_flight import SleighFlight
 
 GAMES = {
-    ShoulderNinja.key: ShoulderNinja,
+    SleighFlight.key: SleighFlight,
     FingerPiano.key: FingerPiano,
 }

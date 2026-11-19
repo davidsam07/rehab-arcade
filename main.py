@@ -19,10 +19,11 @@ import time
 import cv2
 
 import config
-from rehab import audio, ui
+from rehab import assets, audio, ui
 from rehab.games import GAMES
 from rehab.games.finger_piano import FingerPiano
 from rehab.report import chart_image, save_report
+from rehab.scene import WinterScene
 from rehab.session import save_session
 from rehab.songs import SONGS
 from rehab.vision import Tracker, draw_hand, to_px
@@ -32,9 +33,11 @@ INDEX_TIP = 8
 
 MENU_BUTTONS = [
     ui.Button("hombro", "Hombro", (int(W * 0.08), int(H * 0.34), int(W * 0.47), int(H * 0.74)),
-              sublabel="Fruit Ninja: alcanza las frutas", icon="fruit", color=ui.ORANGE, hint="tecla 1"),
+              sublabel="Trineo volador: recoge regalos", images=("icono_hombro", "trineo"), color=ui.ORANGE,
+              hint="tecla 1"),
     ui.Button("mano", "Mano", (int(W * 0.53), int(H * 0.34), int(W * 0.92), int(H * 0.74)),
-              sublabel="Piano de dedos: toca canciones", icon="piano", color=ui.CYAN, hint="tecla 2"),
+              sublabel="Piano de dedos: toca canciones", icon="piano", images=("icono_mano",), color=ui.CYAN,
+              hint="tecla 2"),
     ui.Button("salir", "Salir", (int(W * 0.42), int(H * 0.80), int(W * 0.58), int(H * 0.91)), color=ui.RED),
 ]
 
@@ -51,7 +54,7 @@ def _song_buttons():
         for song in songs:
             n = len(buttons) + 1
             buttons.append(ui.Button(song.key, song.title, (x, y, x + cw, y + ch), sublabel=song.subtitle,
-                                     icon=song.icon, tag=song.mood, hint=f"tecla {n}",
+                                     icon=song.icon, tag=song.mood, hint=f"tecla {n}", images=(f"icono_{song.key}",),
                                      color=ui.GOLD if song.christmas else ui.CYAN))
             x += cw + gap
     return buttons
@@ -91,23 +94,29 @@ def open_camera(index):
 
 
 def hand_pointer(tracker, frame):
-    """Detecta la mano y devuelve la punta del índice en píxeles (o None)."""
+    """Detecta la mano. Devuelve (punta del índice en píxeles o None, landmarks o None)."""
     hand = tracker.detect_hand(frame)
     if hand is None:
-        return None
-    draw_hand(frame, hand, color=(200, 200, 200))
-    return to_px(hand[INDEX_TIP], W, H)
+        return None, None
+    return to_px(hand[INDEX_TIP], W, H), hand
+
+
+def menu_background(frame, scene, dt):
+    """Fondo de los menús: assets/fondo_menu.png si existe; si no, el paisaje nevado animado."""
+    image = assets.background("fondo_menu", W, H)
+    if image is not None:
+        frame[:] = image
+    else:
+        scene.draw(frame, dt, speed=30.0)
 
 
 def footer(frame, text):
     ui.put_text(frame, text, (W // 2, H - 18), 0.55, (200, 200, 200), 1, center=True)
 
 
-def draw_menu(frame, patient, progress, snow=None, dt=0.0):
-    ui.dim(frame, 0.55)
-    if snow:
-        snow.draw(frame, dt)
-    ui.put_text(frame, "Rehab Arcade", (W // 2, int(H * 0.15)), 2.1, ui.WHITE, 2, center=True)
+def draw_menu(frame, patient, progress):
+    if not assets.draw(frame, "logo", (W // 2, int(H * 0.12)), int(W * 0.5), int(H * 0.16)):
+        ui.put_text(frame, "Rehab Arcade", (W // 2, int(H * 0.15)), 2.1, ui.WHITE, 2, center=True)
     ui.put_text(frame, f"Hola, {patient}. ¿Qué quieres entrenar hoy?", (W // 2, int(H * 0.25)), 0.95,
                 ui.YELLOW, 2, center=True)
     for button in MENU_BUTTONS:
@@ -115,10 +124,8 @@ def draw_menu(frame, patient, progress, snow=None, dt=0.0):
     footer(frame, "Deja el dedo índice quieto sobre un botón para elegirlo   ·   F: pantalla completa   ·   ESC: salir")
 
 
-def draw_songs(frame, progress, snow=None, dt=0.0):
-    ui.dim(frame, 0.6)
-    if snow:
-        snow.draw(frame, dt)
+def draw_songs(frame, progress):
+    ui.dim(frame, 0.25)
     ui.put_text(frame, "Elige una canción", (W // 2, int(H * 0.12)), 1.6, ui.WHITE, 2, center=True)
     ui.put_text(frame, "Las notas caerán al ritmo de la música", (W // 2, int(H * 0.19)), 0.8, ui.GOLD, 2,
                 center=True)
@@ -128,7 +135,7 @@ def draw_songs(frame, progress, snow=None, dt=0.0):
 
 
 def draw_results(frame, game, patient, lines, chart, progress):
-    ui.dim(frame, 0.78)
+    ui.dim(frame, 0.55)
     ui.put_text(frame, f"¡Buen trabajo, {patient}!", (W // 2, 62), 1.4, ui.YELLOW, 2, center=True)
     ui.put_text(frame, game.title, (W // 2, 102), 0.75, ui.CYAN, 2, center=True)
     line_h = 36
@@ -149,7 +156,7 @@ def main():
     cap = open_camera(args.camara)
     tracker = Tracker(config.POSE_MODEL, config.HAND_MODEL)
     selector = ui.DwellSelector(config.DWELL_TIME)
-    snow = ui.Snow(70) if config.SNOW else None
+    scene = WinterScene(W, H)
     audio.mixer.start()
 
     cv2.namedWindow(config.WINDOW_NAME, cv2.WINDOW_NORMAL)
@@ -175,16 +182,19 @@ def main():
             choice = None
 
             if state in ("menu", "songs", "results"):
-                pointer = hand_pointer(tracker, frame)
+                pointer, hand = hand_pointer(tracker, frame)
+                menu_background(frame, scene, dt)
                 buttons = {"menu": MENU_BUTTONS, "songs": SONG_BUTTONS + [BACK_SONGS],
                            "results": [AGAIN_BUTTON, BACK_BUTTON]}[state]
                 selected, progress = selector.update(buttons, pointer, now)
                 if state == "menu":
-                    draw_menu(frame, args.paciente, progress, snow, dt)
+                    draw_menu(frame, args.paciente, progress)
                 elif state == "songs":
-                    draw_songs(frame, progress, snow, dt)
+                    draw_songs(frame, progress)
                 else:
                     draw_results(frame, game, args.paciente, result_lines, chart, progress)
+                if hand is not None:
+                    draw_hand(frame, hand, color=(230, 230, 230))
                 ui.draw_pointer(frame, pointer, max(progress.values(), default=0.0))
                 choice = selected.key if selected else None
 

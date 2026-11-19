@@ -11,6 +11,8 @@ Cómo funciona:
    la línea, junta el pulgar con ese dedo y suena ESA nota de la canción.
    Las notas que van demasiado seguidas para el paciente las toca el ordenador,
    así la melodía nunca se corta y el paciente solo hace las que puede.
+   Las notas largas tienen cola: hay que MANTENER la pinza hasta que acabe
+   (ejercicio isométrico de fuerza y control de la pinza).
 3. Dificultad adaptativa: si acierta, la canción va más rápido y le tocan más
    notas; si le cuesta, va más lenta y con más espacio entre notas. Además, los
    dedos que más fallan reciben más notas para entrenarlos.
@@ -34,7 +36,7 @@ import numpy as np
 
 import config
 from config import Piano as C
-from rehab import audio, ui
+from rehab import assets, audio, ui
 from rehab.games.base import Minigame
 from rehab.geometry import distance
 from rehab.songs import SONGS, midi, solfege
@@ -63,6 +65,8 @@ class Note:
     pitch: str
     playable: bool      # True = la toca el paciente; False = la toca el ordenador
     done: bool = False
+    hold_end: float = 0.0   # nota larga: pulso hasta el que hay que mantener la pinza (0 = nota normal)
+    holding: bool = False   # el paciente la está manteniendo ahora mismo
 
 
 class FingerPiano(Minigame):
@@ -119,6 +123,9 @@ class FingerPiano(Minigame):
         self.offsets = []            # error de tiempo de cada acierto (s)
         self.combo = 0
         self.best_combo = 0
+        self.holding_note = None     # nota larga que se está manteniendo
+        self.holds_ok = 0
+        self.holds_total = 0
         self.effects = []            # animaciones de acierto / fallo
         self.snow = ui.Snow(35, seed=3) if (config.SNOW and self.song.christmas) else None
 
@@ -150,23 +157,14 @@ class FingerPiano(Minigame):
         for r in range(self.repeats):
             chord_starts += [(self.lead + r * s.length + b, name) for b, name, _ in s.chords]
         starts = [b for b, _ in chord_starts]
-        vol = config.MUSIC_VOLUME
         self.accomp = []
         for beat in range(int(math.ceil(self.end_beat))):
             name = chord_starts[bisect.bisect_right(starts, beat + 1e-6) - 1][1]
-            pos = beat % s.beats_per_bar
-            if pos == 0:
-                self.accomp.append((beat, audio.bass_sound(name, round(vol * 1.6, 3))))
-                self.accomp.append((beat, audio.chord_sound(name, round(vol * 1.0, 3))))
-            elif s.beats_per_bar == 4 and pos == 2:
-                self.accomp.append((beat, audio.bass_sound(name, round(vol * 1.3, 3), fifth=True)))
-                self.accomp.append((beat, audio.chord_sound(name, round(vol * 0.8, 3))))
-            else:
-                self.accomp.append((beat, audio.chord_sound(name, round(vol * 0.65, 3))))
+            for sound in audio.accomp_hits(name, beat % s.beats_per_bar, s.beats_per_bar):
+                self.accomp.append((beat, sound))
         # Acorde final
-        last = s.chords[-1][1]
-        self.accomp.append((self.end_beat, audio.bass_sound(last, round(vol * 1.6, 3))))
-        self.accomp.append((self.end_beat, audio.chord_sound(last, round(vol * 1.1, 3))))
+        for sound in audio.accomp_hits(s.chords[-1][1], 0, s.beats_per_bar):
+            self.accomp.append((self.end_beat, sound))
         self.acc_i = 0
 
     @property
@@ -390,7 +388,6 @@ class FingerPiano(Minigame):
         if landmarks is None:
             self.smooth = None
             self.pinched = [False] * 4   # si se pierde la mano, la pinza se suelta
-            self.warn_not_detected(frame, "No veo tu mano: ponla delante de la cámara")
         else:
             ratios, pts = pinch_ratios(landmarks, w, h)
             onset = self._update_pinch(ratios, dt)
@@ -398,9 +395,10 @@ class FingerPiano(Minigame):
 
         if onset is not None:
             self._on_pinch(onset)
+        self._update_hold()
         window = C.HIT_WINDOW * self.bpm / 60
         for note in self.notes:
-            if note.playable and not note.done and self.beat > note.beat + window:
+            if note.playable and not note.done and not note.holding and self.beat > note.beat + window:
                 note.done = True
                 self.misses[note.lane] += 1
                 self.combo = 0
@@ -410,6 +408,8 @@ class FingerPiano(Minigame):
 
         self._draw_piano(frame, dt)
         self._draw_next_finger(frame)
+        if landmarks is None:  # al final, para que no lo tape el piano
+            self.warn_not_detected(frame, "No veo tu mano: ponla delante de la cámara")
         if self.beat >= self.end_beat + 1:
             self.finished = True
 
@@ -423,11 +423,16 @@ class FingerPiano(Minigame):
             # Para el paciente: notas separadas al menos min_gap, preferiblemente en un pulso fuerte
             playable = gap >= self.min_gap and (on_beat or gap >= 1.8 * self.min_gap)
             lane = self.pitch_lane[pitch]
+            hold_end = 0.0
             if playable:
                 lane = self._reinforce(lane)
                 self.used[lane] += 1
                 self.last_play_beat = beat
-            self.notes.append(Note(lane, beat, dur, pitch, playable))
+                if dur * 60 / self.bpm >= C.HOLD_MIN_TIME:
+                    # Nota larga: se mantiene casi toda su duración (y la siguiente nota espera a que acabe)
+                    hold_end = beat + min(dur - 0.25, C.HOLD_MAX_TIME * self.bpm / 60)
+                    self.last_play_beat = hold_end
+            self.notes.append(Note(lane, beat, dur, pitch, playable, hold_end=hold_end))
 
     def _reinforce(self, lane):
         """A veces manda la nota al dedo que más le cuesta (o al que menos ha trabajado)."""
@@ -458,13 +463,17 @@ class FingerPiano(Minigame):
 
     def _on_pinch(self, lane):
         window = C.HIT_WINDOW * self.bpm / 60
-        candidates = [n for n in self.notes if n.playable and n.lane == lane and not n.done
+        candidates = [n for n in self.notes if n.playable and n.lane == lane and not n.done and not n.holding
                       and abs(self.beat - n.beat) <= window]
         if not candidates:
             self.wrong[lane] += 1
             return
         note = min(candidates, key=lambda n: abs(self.beat - n.beat))
-        note.done = True
+        if note.hold_end:
+            note.holding = True      # nota larga: ahora hay que mantenerla
+            self.holding_note = note
+        else:
+            note.done = True
         offset = (self.beat - note.beat) * 60 / self.bpm
         self.hits[lane] += 1
         self.offsets.append(offset)
@@ -472,10 +481,37 @@ class FingerPiano(Minigame):
         self.best_combo = max(self.best_combo, self.combo)
         audio.mixer.play(audio.piano_note(note.pitch, config.SFX_VOLUME))
         perfect = abs(offset) <= C.PERFECT_WINDOW
+        if note.hold_end:
+            self.effects.append({"lane": lane, "text": "¡Mantén!", "color": ui.CYAN, "t": 0.0, "ring": True,
+                                 "name": solfege(note.pitch)})
+            self._register(True)
+            return
         self.effects.append({"lane": lane, "text": "¡Perfecto!" if perfect else "¡Bien!",
                              "color": ui.YELLOW if perfect else ui.GREEN, "t": 0.0, "ring": True,
                              "name": solfege(note.pitch)})
         self._register(True)
+
+    def _update_hold(self):
+        """Nota larga: termina bien si aguanta la pinza hasta el final (o casi)."""
+        note = self.holding_note
+        if note is None:
+            return
+        if self.pinched[note.lane] and self.beat < note.hold_end:
+            return  # sigue manteniéndola
+        held = (min(self.beat, note.hold_end) - note.beat) / (note.hold_end - note.beat)
+        ok = held >= C.HOLD_OK
+        self.holds_total += 1
+        self.holds_ok += ok
+        if ok:
+            audio.mixer.play(audio.chime(4))
+            self.effects.append({"lane": note.lane, "text": "¡Aguantado!", "color": ui.YELLOW, "t": 0.0,
+                                 "ring": True})
+        else:
+            self.effects.append({"lane": note.lane, "text": "Casi...", "color": ui.ORANGE, "t": 0.0,
+                                 "ring": False})
+        note.holding = False
+        note.done = True
+        self.holding_note = None
 
     def _register(self, hit):
         """Adapta la velocidad de la canción y la cantidad de notas a la precisión reciente."""
@@ -495,7 +531,8 @@ class FingerPiano(Minigame):
         """La siguiente nota del paciente, si está a punto de llegar."""
         window = C.HIT_WINDOW * self.bpm / 60
         hint = C.HINT_TIME * self.bpm / 60
-        upcoming = [n for n in self.notes if n.playable and not n.done and -window <= n.beat - self.beat <= hint]
+        upcoming = [n for n in self.notes if n.playable and not n.done and not n.holding
+                    and -window <= n.beat - self.beat <= hint]
         return min(upcoming, key=lambda n: n.beat) if upcoming else None
 
     def _draw_hand_overlay(self, frame, pts):
@@ -519,7 +556,15 @@ class FingerPiano(Minigame):
         nxt = self._next_note()
         active = self.pinched.index(True) if True in self.pinched else None
         x1, y1 = 24, 88
-        if active is not None and self.pinch_time > C.STUCK_HINT_TIME and (nxt is None or nxt.lane != active):
+        hold = self.holding_note
+        if hold is not None:
+            color = LANE_COLORS[hold.lane]
+            progress = (self.beat - hold.beat) / (hold.hold_end - hold.beat)
+            ui.rounded_rect(frame, (x1, y1, x1 + 460, y1 + 96), 22, ui.DARK, 0.9, border=color)
+            ui.put_text(frame, "Mantén:", (x1 + 24, y1 + 44), 0.75, ui.WHITE, 2, shadow=False)
+            ui.put_text(frame, FINGERS[hold.lane], (x1 + 150, y1 + 46), 1.05, color, 2, shadow=False)
+            ui.progress_bar(frame, (x1 + 24, y1 + 64, x1 + 436, y1 + 80), progress, color)
+        elif active is not None and self.pinch_time > C.STUCK_HINT_TIME and (nxt is None or nxt.lane != active):
             ui.rounded_rect(frame, (x1, y1, x1 + 470, y1 + 76), 22, ui.DARK, 0.88, border=ui.ORANGE)
             ui.put_text(frame, "Separa un poco el pulgar", (x1 + 24, y1 + 34), 0.75, ui.ORANGE, 2, shadow=False)
             ui.put_text(frame, f"para soltar el {FINGERS[active].lower()}", (x1 + 24, y1 + 64), 0.6, ui.WHITE, 2,
@@ -539,7 +584,8 @@ class FingerPiano(Minigame):
         bpb = self.song.beats_per_bar
         nxt = self._next_note()
 
-        ui.rounded_rect(frame, (x1 - 10, top - 10, x2 + 10, bottom + 10), 24, ui.DARKER, 0.72)
+        if not assets.draw_rect(frame, "fondo_piano", (x1 - 10, top - 10, x2 + 10, bottom + 10)):
+            ui.rounded_rect(frame, (x1 - 10, top - 10, x2 + 10, bottom + 10), 24, ui.DARKER, 0.72)
         for i in range(4):  # carriles con un tinte muy suave de su color
             lx = x1 + i * lane_w
             ui.rounded_rect(frame, (lx + 4, top, lx + lane_w - 4, line_y), 14, LANE_COLORS[i],
@@ -557,6 +603,9 @@ class FingerPiano(Minigame):
         for note in self.notes:
             if not note.playable or note.done:
                 continue
+            if note.hold_end:
+                self._draw_long_note(frame, note, x1, lane_w, top, line_y, ppb, note is nxt)
+                continue
             y_head = int(line_y - (note.beat - self.beat) * ppb)
             y_head = min(y_head, line_y + 8)     # si llega antes que el paciente, espera en la línea
             length = int(min(160, max(40, note.dur * ppb - 10)))
@@ -567,8 +616,7 @@ class FingerPiano(Minigame):
             color = LANE_COLORS[note.lane]
             if note is nxt:  # brillo alrededor de la siguiente nota
                 ui.rounded_rect(frame, (lx + 3, y_top - 6, lx + lane_w - 3, y_head + 6), 18, color, 0.35)
-            ui.rounded_rect(frame, (lx + 10, y_top, lx + lane_w - 10, y_head), 14, color, 0.95, border=ui.WHITE,
-                            border_th=2)
+            self._draw_note_box(frame, (lx + 10, y_top, lx + lane_w - 10, y_head), color)
             if y_head - y_top > 30:
                 ui.put_text(frame, solfege(note.pitch), (lx + lane_w // 2, y_head - 12), 0.55, ui.DARKER, 2,
                             center=True, shadow=False)
@@ -583,8 +631,10 @@ class FingerPiano(Minigame):
             pressed = self.pinched[i]
             dy = 5 if pressed else 0
             rect = (lx + 5, line_y + 12 + dy, lx + lane_w - 5, bottom + dy)
-            ui.rounded_rect(frame, rect, 14, LANE_COLORS[i] if pressed else ui.IVORY, 1.0,
-                            border=LANE_COLORS[i] if nxt is not None and nxt.lane == i else None, border_th=5)
+            if not assets.draw_rect(frame, "tecla", rect, tint=LANE_COLORS[i] if pressed else None):
+                ui.rounded_rect(frame, rect, 14, LANE_COLORS[i] if pressed else ui.IVORY, 1.0)
+            if nxt is not None and nxt.lane == i:
+                ui.rounded_rect(frame, rect, 14, ui.WHITE, 0.0, border=LANE_COLORS[i], border_th=5)
             ui.rounded_rect(frame, (rect[0], rect[1], rect[2], rect[1] + 14), 7, LANE_COLORS[i], 1.0)
             ui.put_text(frame, FINGERS[i], (lx + lane_w // 2, bottom - 22 + dy), 0.62,
                         ui.WHITE if pressed else ui.INK, 2, center=True, shadow=pressed)
@@ -608,6 +658,40 @@ class FingerPiano(Minigame):
 
         if self.combo >= 3:
             ui.put_text(frame, f"¡{self.combo} seguidas!", ((x1 + x2) // 2, top + 44), 1.0, ui.YELLOW, 2, center=True)
+
+    @staticmethod
+    def _draw_note_box(frame, rect, color):
+        """Una nota: imagen assets/nota.png (o un degradado) teñida con el color del dedo y borde blanco."""
+        if not assets.draw_rect(frame, "nota", rect, tint=color):
+            ui.rounded_rect(frame, rect, 14, color, 0.95)
+        ui.rounded_rect(frame, rect, 14, color, 0.0, border=ui.WHITE, border_th=2)
+
+    def _draw_long_note(self, frame, note, x1, lane_w, top, line_y, ppb, is_next):
+        """Nota larga: cabeza como una nota normal y una cola que hay que "consumir" manteniendo la pinza."""
+        lx = x1 + note.lane * lane_w
+        color = LANE_COLORS[note.lane]
+        if note.holding:
+            y_head = line_y
+        else:
+            y_head = min(int(line_y - (note.beat - self.beat) * ppb), line_y + 8)
+        y_end = max(top, int(line_y - (note.hold_end - self.beat) * ppb))
+        if y_head <= top + 4:
+            return
+        if y_head - y_end > 8:  # cola
+            ui.rounded_rect(frame, (lx + 26, y_end, lx + lane_w - 26, y_head), 14, color,
+                            0.9 if note.holding else 0.55, border=ui.WHITE if note.holding else color, border_th=2)
+            if y_head - y_end > 120:
+                ui.put_text(frame, "MANTÉN", (lx + lane_w // 2, (y_end + y_head) // 2 + 8), 0.5, ui.WHITE, 2,
+                            center=True)
+        if note.holding:  # brillo sobre la línea mientras la mantiene
+            pulse = 0.35 + 0.25 * math.sin(self.beat * math.pi * 4)
+            ui.rounded_rect(frame, (lx + 4, line_y - 26, lx + lane_w - 4, line_y + 10), 14, color, pulse)
+            return
+        if is_next:
+            ui.rounded_rect(frame, (lx + 3, y_head - 56, lx + lane_w - 3, y_head + 6), 18, color, 0.35)
+        self._draw_note_box(frame, (lx + 10, y_head - 50, lx + lane_w - 10, y_head), color)
+        ui.put_text(frame, solfege(note.pitch), (lx + lane_w // 2, y_head - 14), 0.55, ui.DARKER, 2,
+                    center=True, shadow=False)
 
     def hud_center(self):
         lap = min(self.repeats, int(max(0.0, self.beat - self.lead) // self.song.length) + 1)
@@ -641,6 +725,8 @@ class FingerPiano(Minigame):
             f"Mejor racha: {self.best_combo} seguidas   ·   Pinzas sin nota: {total_wrong}",
             f"Desfase medio con el ritmo: {offset_ms:.0f} ms   ·   Velocidad final: {self.tempo * 100:.0f}%",
         ]
+        if self.holds_total:
+            lines.append(f"Notas largas aguantadas: {self.holds_ok} de {self.holds_total}")
         if worst is not None:
             lines.append(f"Dedo a trabajar más: {FINGERS[worst]}")
 
@@ -658,4 +744,6 @@ class FingerPiano(Minigame):
         row["cancion"] = self.song.key
         row["tempo_final_pct"] = round(self.tempo * 100)
         row["mejor_racha"] = self.best_combo
+        row["largas_ok"] = self.holds_ok
+        row["largas_total"] = self.holds_total
         return lines, row
