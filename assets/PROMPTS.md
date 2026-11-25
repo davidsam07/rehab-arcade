@@ -7,7 +7,7 @@ Prompts para generar con IA (ChatGPT, Gemini, Midjourney, Ideogram, Leonardo...)
 1. **Genera primero el trineo** (`trineo.png`). Es la imagen principal y marca el estilo.
 2. Para todas las demás, **adjunta el trineo como imagen de referencia** y añade al prompt: *"Match the exact art style, outline thickness, shading and color palette of the attached reference image."* Si es posible, genéralas todas en la misma conversación.
 3. Los prompts ya llevan el bloque de estilo común (**ESTILO**). No lo quites, aunque parezca repetido: es lo que mantiene la coherencia.
-4. **Fondo:** los objetos se piden sobre **fondo magenta liso (#FF00FF)**. No hace falta recortarlos: el juego quita solo el fondo si es un color liso. Si tu generador permite PNG transparente, mejor aún.
+4. **Fondo:** los objetos se piden sobre **fondo magenta liso (#FF00FF)** y luego se les quita el fondo (con cualquier quitafondos) antes de meterlos en `assets/`. Si tu generador permite PNG transparente, mejor aún.
 5. Guarda cada imagen como **PNG** con el nombre exacto en la carpeta `assets/` y reinicia el juego.
 
 **Bloque de estilo común (ya incluido en cada prompt):**
@@ -61,7 +61,7 @@ Game logo with the text "Rehab Arcade" in big bold rounded friendly letters, war
 ```
 
 ### `fondo_menu.png`: fondo de los menús
-Proporción 16:9, sin magenta. Opcional: si no lo pones, se usa el paisaje animado.
+Proporción 16:9, sin magenta: es un fondo completo.
 ```
 Cozy Christmas night landscape background for a game main menu, snowy hills with pine trees and small cottages with glowing windows at the bottom, big full moon and starry deep navy sky, gentle falling snow, a large calm empty area in the center for menu buttons, magical and peaceful. 2D casual game background, flat vector illustration with soft gradients and subtle cel shading, cozy Christmas night theme, color palette of deep navy blue, warm gold, cranberry red, pine green and snowy white, rounded friendly shapes, high quality, no text, no watermark. Aspect ratio 16:9.
 ```

@@ -1,9 +1,9 @@
-"""Guardado del historial de sesiones en CSV (uno por modo de juego).
+"""Guarda las partidas en CSV (uno por modo).
 
-data/hombro.csv y data/mano.csv tienen una fila por partida. Así el
-terapeuta puede abrirlos en Excel y nosotros pintar la evolución.
-Si una versión nueva del juego añade columnas, el CSV se reescribe con
-todas ellas y las partidas antiguas quedan con esas casillas vacías.
+data/hombro.csv y data/mano.csv tienen una fila por partida, así se pueden
+abrir en Excel y de ahí sale la gráfica de evolución. Si en una versión nueva
+añado columnas, el CSV se reescribe con todas y las partidas viejas se quedan
+con esas casillas vacías.
 """
 import csv
 import os

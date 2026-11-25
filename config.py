@@ -1,7 +1,8 @@
-"""Configuración global de Rehab Arcade.
+"""Configuración del juego.
 
-Todos los parámetros ajustables del juego están aquí, para no tener
-"números mágicos" repartidos por el código.
+Aquí están todos los números que se pueden tocar (tiempos, umbrales,
+volúmenes...) para no tener que ir buscándolos por el código. Casi todos los
+he ido ajustando a base de probar con la webcam.
 """
 import os
 
@@ -32,9 +33,6 @@ AUTO_NOTE_VOLUME = 0.14   # resto de notas de la melodía
 # Retardo extra del audio, además del que informa la tarjeta de sonido. Súbelo (p.ej. 0.15)
 # si usas auriculares Bluetooth y notas que la música va por detrás de las notas que caen.
 AUDIO_EXTRA_LATENCY = 0.0
-
-# Aspecto
-SNOW = True               # copos de nieve en los menús y en las canciones navideñas
 
 
 class Sleigh:

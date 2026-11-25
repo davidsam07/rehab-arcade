@@ -1,1 +1,1 @@
-"""Paquete principal de Rehab Arcade."""
+"""Todo el código del juego."""

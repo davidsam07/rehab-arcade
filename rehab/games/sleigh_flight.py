@@ -1,21 +1,21 @@
 """Modo hombro: Trineo volador.
 
-Cómo funciona:
-1. Calibración: el paciente sube los brazos por los lados todo lo que pueda
-   y guardamos el ángulo máximo de cada hombro (su rango de movimiento, ROM).
-2. Juego: un trineo vuela sobre un paisaje nevado. Su ALTURA depende de
-   cuánto levanta los brazos: brazos abajo = trineo abajo; brazos a la altura
-   de su máximo = trineo arriba. Por el cielo vienen grupos de regalos y
-   estrellas, colocados a distintas alturas dentro de su rango: para
-   recogerlos tiene que subir y bajar los brazos (abducción de hombro) de
-   forma continua, que es justo el ejercicio de rehabilitación.
-3. Dificultad adaptativa: si recoge casi todo, los regalos salen más arriba
-   (hasta un poco por encima de su máximo, para que estire) y el trineo vuela
-   más rápido; si le cuesta, salen más bajos y más despacio.
+La idea: un trineo vuela y su altura depende de cuánto subes los brazos por
+los lados (abducción de hombro). Para coger los regalos hay que subir y bajar
+los brazos todo el rato, que es justo el ejercicio. Al principio este modo era
+un Fruit Ninja, pero el trineo engancha más y el movimiento es más continuo.
 
-La elevación se mide con MediaPipe Pose como el ángulo entre la vertical y
-el brazo (hombro -> codo), normalizado por el máximo de la calibración de
-cada lado, y se usa la media de los dos brazos (o el que se vea).
+1. Calibración: se suben los brazos todo lo posible y guardo el ángulo
+   máximo de cada hombro (su rango de movimiento).
+2. Juego: los regalos salen a distintas alturas dentro de ese rango, y las
+   estrellas arriba del todo para que estire un poco más.
+3. Dificultad adaptativa: si coge casi todo, los regalos salen más altos
+   (hasta un poco por encima de su máximo) y el trineo va más rápido; si le
+   cuesta, más bajos y más despacio.
+
+La elevación es el ángulo entre la vertical y el brazo (hombro -> codo) que
+saca MediaPipe Pose, dividido por el máximo de la calibración de cada lado.
+Uso la media de los dos brazos (o el que se vea).
 """
 import math
 import random
@@ -55,11 +55,11 @@ class Arm:
 
 
 def read_arms(landmarks, width: int, height: int) -> dict:
-    """Devuelve {"izq": Arm, "der": Arm} con los brazos bien visibles.
+    """Devuelve {"izq": Arm, "der": Arm} con los brazos que se ven bien.
 
-    La imagen está en espejo, así que el brazo que se ve a la derecha de la
-    pantalla es el derecho del paciente. Lo decidimos por posición en pantalla
-    para no depender de las etiquetas izquierda/derecha de MediaPipe.
+    La imagen va en espejo, así que el brazo que sale a la derecha de la
+    pantalla es el derecho. Lo decido por la posición en pantalla para no
+    liarme con las etiquetas izquierda/derecha de MediaPipe.
     """
     if landmarks is None:
         return {}

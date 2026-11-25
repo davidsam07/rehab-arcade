@@ -1,7 +1,7 @@
-"""Envoltorio de MediaPipe: detección de pose (cuerpo) y de mano.
+"""MediaPipe: detección del cuerpo (pose) y de la mano.
 
-Las dos tareas se crean en modo VIDEO, que aprovecha el seguimiento entre
-frames y es más estable que detectar imagen a imagen.
+Uso los dos detectores en modo VIDEO, que va siguiendo los puntos entre
+frames y salta menos que detectar cada imagen por separado.
 """
 import time
 

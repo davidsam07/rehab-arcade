@@ -1,15 +1,14 @@
-"""Canciones del piano de dedos (todas de dominio público).
+"""Canciones del piano (todas de dominio público).
 
-Cada canción se escribe como texto, nota a nota:
+Cada canción está escrita como texto, nota a nota:
 
-    "E5:1 E5:1 E5:2 | ..."   ->  nota:duración en pulsos ("|" separa compases y se ignora)
+    "E5:1 E5:1 E5:2 | ..."   ->  nota:duración en pulsos (el "|" separa compases, es solo para leerlo mejor)
 
-Los acordes se escriben igual ("C:4 F:2 G7:2 ...") y sirven para generar el
-acompañamiento (bajo + acordes) al mismo tempo que la melodía. Así no hace
-falta ningún archivo de audio: todo lo sintetiza rehab/audio.py.
+Los acordes van igual ("C:4 F:2 G7:2 ...") y con ellos se genera el bajo y
+los acordes del acompañamiento.
 
-Para añadir una canción basta con escribir su melodía y sus acordes abajo y
-meterla en SONGS. Melodía y acordes tienen que durar lo mismo.
+Para añadir una canción: escribir su melodía y sus acordes abajo y meterla
+en SONGS. Tienen que durar lo mismo; si no, salta un error al arrancar.
 """
 from dataclasses import dataclass
 
@@ -51,7 +50,6 @@ class Song:
     melody: tuple           # ((pulso, nota, duración), ...)
     chords: tuple           # ((pulso, acorde, duración), ...)
     length: float           # duración total en pulsos
-    icon: str               # icono de la tarjeta (ver ui.ICONS)
     christmas: bool = True
 
     @property
@@ -61,12 +59,12 @@ class Song:
         return "Alegre" if self.bpm >= 115 else "Animada"
 
 
-def _song(key, title, subtitle, bpm, beats_per_bar, melody, chords, icon, pickup=0.0, christmas=True):
+def _song(key, title, subtitle, bpm, beats_per_bar, melody, chords, pickup=0.0, christmas=True):
     mel, mel_len = _parse(melody)
     cho, cho_len = _parse(chords)
     if abs(mel_len - cho_len) > 1e-6:
         raise ValueError(f"{key}: la melodía dura {mel_len} pulsos y los acordes {cho_len}")
-    return Song(key, title, subtitle, bpm, beats_per_bar, pickup, mel, cho, mel_len, icon, christmas)
+    return Song(key, title, subtitle, bpm, beats_per_bar, pickup, mel, cho, mel_len, christmas)
 
 
 # ----------------------------------------------------------------- canciones
@@ -78,8 +76,7 @@ JINGLE_BELLS = _song(
        F5:1 F5:1 F5:1.5 F5:0.5 | F5:1 E5:1 E5:1 E5:0.5 E5:0.5 | E5:1 D5:1 D5:1 E5:1 | D5:2 G5:2 |
        E5:1 E5:1 E5:2 | E5:1 E5:1 E5:2 | E5:1 G5:1 C5:1.5 D5:0.5 | E5:4 |
        F5:1 F5:1 F5:1.5 F5:0.5 | F5:1 E5:1 E5:1 E5:0.5 E5:0.5 | G5:1 G5:1 F5:1 D5:1 | C5:4""",
-    "C:4 C:4 C:4 C:4 F:4 C:4 D7:4 G7:4 C:4 C:4 C:4 C:4 F:4 C:4 G7:4 C:4",
-    icon="bell")
+    "C:4 C:4 C:4 C:4 F:4 C:4 D7:4 G7:4 C:4 C:4 C:4 C:4 F:4 C:4 G7:4 C:4")
 
 # Franz Xaver Gruber, 1818 (vals lento)
 NOCHE_DE_PAZ = _song(
@@ -88,8 +85,7 @@ NOCHE_DE_PAZ = _song(
        A4:2 A4:1 | C5:1.5 B4:0.5 A4:1 | G4:1.5 A4:0.5 G4:1 | E4:3 |
        A4:2 A4:1 | C5:1.5 B4:0.5 A4:1 | G4:1.5 A4:0.5 G4:1 | E4:3 |
        D5:2 D5:1 | F5:1.5 D5:0.5 B4:1 | C5:3 | E5:3 | C5:1 G4:1 E4:1 | G4:1.5 F4:0.5 D4:1 | C4:6""",
-    "C:3 C:3 C:3 C:3 G:3 G:3 C:3 C:3 F:3 F:3 C:3 C:3 F:3 F:3 C:3 C:3 G:3 G7:3 C:3 C:3 C:3 G7:3 C:6",
-    icon="star")
+    "C:3 C:3 C:3 C:3 G:3 G:3 C:3 C:3 F:3 F:3 C:3 C:3 F:3 F:3 C:3 C:3 G:3 G7:3 C:3 C:3 C:3 G7:3 C:6")
 
 # Villancico tradicional inglés (vals). Empieza con una nota de anacrusa.
 WE_WISH = _song(
@@ -97,7 +93,7 @@ WE_WISH = _song(
     """G4:1 | C5:1 C5:0.5 D5:0.5 C5:0.5 B4:0.5 | A4:1 A4:1 A4:1 | D5:1 D5:0.5 E5:0.5 D5:0.5 C5:0.5 |
        B4:1 G4:1 G4:1 | E5:1 E5:0.5 F5:0.5 E5:0.5 D5:0.5 | C5:1 A4:1 G4:0.5 G4:0.5 | A4:1 D5:1 B4:1 | C5:2""",
     "G7:1 C:3 F:3 D7:3 G:3 E7:3 Am:3 F:1 G7:2 C:2",
-    icon="tree", pickup=1)
+    pickup=1)
 
 # Villancico tradicional galés
 DECK_THE_HALLS = _song(
@@ -106,8 +102,7 @@ DECK_THE_HALLS = _song(
        G5:1.5 F5:0.5 E5:1 D5:1 | C5:1 D5:1 E5:1 C5:1 | D5:0.5 E5:0.5 F5:0.5 D5:0.5 E5:1.5 D5:0.5 | C5:1 B4:1 C5:2 |
        D5:1.5 E5:0.5 F5:1 D5:1 | E5:1.5 F5:0.5 G5:1 D5:1 | E5:0.5 F5:0.5 G5:1 A5:0.5 B5:0.5 C6:1 | B5:1 A5:1 G5:2 |
        G5:1.5 F5:0.5 E5:1 D5:1 | C5:1 D5:1 E5:1 C5:1 | A5:0.5 A5:0.5 A5:0.5 A5:0.5 G5:1.5 F5:0.5 | E5:1 D5:1 C5:2""",
-    """C:4 C:4 G7:4 G7:2 C:2 | C:4 C:4 G7:4 G7:2 C:2 | G7:4 C:4 C:4 G:4 | C:4 C:4 F:4 G7:2 C:2""",
-    icon="snowflake")
+    """C:4 C:4 G7:4 G7:2 C:2 | C:4 C:4 G7:4 G7:2 C:2 | G7:4 C:4 C:4 G:4 | C:4 C:4 F:4 G7:2 C:2""")
 
 # Ludwig van Beethoven, 1824
 HIMNO = _song(
@@ -117,6 +112,6 @@ HIMNO = _song(
        D5:1 D5:1 E5:1 C5:1 | D5:1 E5:0.5 F5:0.5 E5:1 C5:1 | D5:1 E5:0.5 F5:0.5 E5:1 D5:1 | C5:1 D5:1 G4:2 |
        E5:1 E5:1 F5:1 G5:1 | G5:1 F5:1 E5:1 D5:1 | C5:1 C5:1 D5:1 E5:1 | D5:1.5 C5:0.5 C5:2""",
     """C:4 G:4 C:4 G:4 | C:4 G:4 C:4 G:2 C:2 | G:2 C:2 G:2 C:2 G:2 C:2 C:2 G:2 | C:4 G:4 C:4 G:2 C:2""",
-    icon="note", christmas=False)
+    christmas=False)
 
 SONGS = {s.key: s for s in (JINGLE_BELLS, NOCHE_DE_PAZ, WE_WISH, DECK_THE_HALLS, HIMNO)}

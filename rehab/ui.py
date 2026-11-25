@@ -1,13 +1,12 @@
-"""Utilidades de dibujo: textos, tarjetas, botones por "dwell", iconos y nieve.
+"""Cosas de dibujo: textos, tarjetas, botones por "dwell" y nieve.
 
-- Textos: cv2.putText no sabe dibujar tildes ni eñes y su letra es poco
-  legible, así que los textos se dibujan con Pillow usando una fuente de
-  verdad (Segoe UI en Windows, DejaVu de matplotlib en el resto). Cada texto
-  se renderiza una sola vez y se guarda en caché, así no se nota en los FPS.
-  Llevan un borde oscuro para que se lean encima de la imagen de la cámara.
-- Botones por dwell: el usuario pulsa un botón manteniendo el dedo índice
-  encima un segundo y medio, sin teclado ni ratón. Es una técnica de IPM
-  típica en interfaces sin contacto y accesibles.
+- Textos: cv2.putText no pinta tildes ni eñes y la letra queda bastante
+  fea, así que los textos los dibujo con Pillow y una fuente normal (Segoe UI
+  en Windows, DejaVu en el resto). Cada texto se renderiza una vez y se guarda
+  en caché, porque si no los FPS bajaban bastante.
+- Botones por dwell: se pulsan dejando el dedo índice encima un segundo y
+  medio, sin ratón ni teclado. Es lo típico en interfaces sin contacto y va
+  bien para gente mayor.
 """
 import math
 import os
@@ -21,7 +20,6 @@ from PIL import Image, ImageDraw, ImageFont
 
 # Colores en BGR (como los usa OpenCV)
 WHITE = (255, 255, 255)
-BLACK = (0, 0, 0)
 GREEN = (110, 215, 90)
 RED = (80, 80, 235)
 YELLOW = (70, 215, 255)
@@ -33,8 +31,6 @@ DARKER = (32, 22, 16)
 IVORY = (235, 244, 248)      # teclas del piano
 INK = (60, 45, 40)           # texto oscuro sobre fondo claro
 GOLD = (60, 200, 245)
-XMAS_RED = (60, 55, 205)
-XMAS_GREEN = (80, 165, 45)
 
 SIZE_PER_SCALE = 32          # scale=1.0 equivale a una letra de 32 px
 
@@ -88,9 +84,10 @@ def _premultiply(mask, alpha, color):
 
 
 def _blend(img, inv, pre, x, y):
-    """Mezcla en (x, y) una imagen premultiplicada: img = img * (1 - alfa) + color * alfa.
+    """Pega una imagen con transparencia: img = img * (1 - alfa) + color * alfa.
 
-    Se hace con OpenCV en enteros de 8 bits: unas 15 veces más rápido que con numpy en decimales.
+    Al principio lo hacía con numpy en float y cada frame tardaba unos 35 ms.
+    Con OpenCV en enteros va unas 15 veces más rápido.
     """
     h, w = inv.shape[:2]
     H, W = img.shape[:2]
@@ -174,20 +171,6 @@ def rounded_rect(img, rect, radius=18, color=DARK, alpha=0.85, border=None, bord
         _blend(img, *_shape(w, h, r, 100, tuple(border), border_th), x1, y1)
 
 
-def panel(img, x1, y1, x2, y2, color=(30, 30, 30), alpha=0.65, radius=0):
-    """Rectángulo semitransparente para que el texto se lea encima de la cámara."""
-    if radius:
-        rounded_rect(img, (x1, y1, x2, y2), radius, color, alpha)
-        return
-    x1, y1 = max(0, int(x1)), max(0, int(y1))
-    x2, y2 = min(img.shape[1], int(x2)), min(img.shape[0], int(y2))
-    if x2 <= x1 or y2 <= y1:
-        return
-    roi = img[y1:y2, x1:x2]
-    overlay = np.full_like(roi, color)
-    cv2.addWeighted(overlay, alpha, roi, 1 - alpha, 0, roi)
-
-
 def dim(img, alpha=0.5, color=DARKER):
     """Oscurece toda la imagen (fondo de los menús), tiñéndola un poco de azul."""
     cv2.addWeighted(img, 1 - alpha, np.full_like(img, color), alpha, 0, img)
@@ -267,102 +250,15 @@ def banner(img, text, color=RED, y=None, scale=0.9):
     put_text(img, text, (w // 2, y), scale, WHITE, 2, center=True, shadow=False)
 
 
-# --------------------------------------------------------------------- iconos
-def _poly(img, pts, color):
-    cv2.fillPoly(img, [np.array(pts, np.int32)], color, cv2.LINE_AA)
-
-
-def icon_piano(img, c, s, color=None):
-    x, y = c
-    kw = s // 2
-    for i in range(4):
-        x1 = x - 2 * kw + i * kw
-        cv2.rectangle(img, (x1 + 2, y - s // 2), (x1 + kw - 2, y + s // 2), IVORY, -1, cv2.LINE_AA)
-    for i in (1, 2, 3):
-        bx = x - 2 * kw + i * kw
-        cv2.rectangle(img, (bx - kw // 4, y - s // 2), (bx + kw // 4, y + s // 8), (40, 30, 30), -1)
-
-
-def icon_fruit(img, c, s, color=None):
-    x, y = c
-    r = int(s * 0.55)
-    cv2.circle(img, (x, y + 4), r, (60, 60, 225), -1, cv2.LINE_AA)
-    cv2.circle(img, (x - r // 3, y - r // 3 + 4), r // 4, WHITE, -1, cv2.LINE_AA)
-    cv2.ellipse(img, (x + r // 3, y - r), (r // 3, r // 6), -30, 0, 360, XMAS_GREEN, -1, cv2.LINE_AA)
-    cv2.line(img, (x - r - 12, y + r + 6), (x + r + 12, y - r - 2), WHITE, 4, cv2.LINE_AA)
-
-
-def icon_bell(img, c, s, color=GOLD):
-    x, y = c
-    _poly(img, [(x - s * 0.15, y - s * 0.55), (x + s * 0.15, y - s * 0.55), (x + s * 0.32, y - s * 0.2),
-                (x + s * 0.38, y + s * 0.25), (x + s * 0.55, y + s * 0.42), (x - s * 0.55, y + s * 0.42),
-                (x - s * 0.38, y + s * 0.25), (x - s * 0.32, y - s * 0.2)], color)
-    cv2.circle(img, (x, int(y - s * 0.52)), int(s * 0.17), color, -1, cv2.LINE_AA)
-    cv2.circle(img, (x, int(y + s * 0.5)), int(s * 0.13), (40, 120, 180), -1, cv2.LINE_AA)
-    cv2.ellipse(img, (int(x - s * 0.22), int(y - s * 0.62)), (int(s * 0.2), int(s * 0.1)), 20, 0, 360,
-                XMAS_RED, -1, cv2.LINE_AA)
-    cv2.ellipse(img, (int(x + s * 0.22), int(y - s * 0.62)), (int(s * 0.2), int(s * 0.1)), -20, 0, 360,
-                XMAS_RED, -1, cv2.LINE_AA)
-
-
-def icon_star(img, c, s, color=GOLD):
-    x, y = c
-    pts = []
-    for i in range(10):
-        r = s * (0.6 if i % 2 == 0 else 0.25)
-        a = -math.pi / 2 + i * math.pi / 5
-        pts.append((x + r * math.cos(a), y + r * math.sin(a)))
-    _poly(img, pts, color)
-
-
-def icon_tree(img, c, s, color=XMAS_GREEN):
-    x, y = c
-    for i, (top, base, half) in enumerate([(-0.55, -0.1, 0.32), (-0.3, 0.15, 0.42), (-0.05, 0.42, 0.52)]):
-        _poly(img, [(x, y + s * top), (x + s * half, y + s * base), (x - s * half, y + s * base)], color)
-    cv2.rectangle(img, (int(x - s * 0.08), int(y + s * 0.42)), (int(x + s * 0.08), int(y + s * 0.6)),
-                  (40, 70, 120), -1)
-    for dx, dy, col in ((-0.15, 0.0, XMAS_RED), (0.18, 0.25, GOLD), (-0.25, 0.32, (230, 160, 70))):
-        cv2.circle(img, (int(x + s * dx), int(y + s * dy)), max(3, int(s * 0.06)), col, -1, cv2.LINE_AA)
-    icon_star(img, (x, int(y - s * 0.6)), int(s * 0.3))
-
-
-def icon_snowflake(img, c, s, color=(250, 225, 190)):
-    x, y = c
-    for i in range(6):
-        a = i * math.pi / 3
-        ex, ey = x + s * 0.6 * math.cos(a), y + s * 0.6 * math.sin(a)
-        cv2.line(img, (x, y), (int(ex), int(ey)), color, 4, cv2.LINE_AA)
-        for side in (-1, 1):
-            mx, my = x + s * 0.35 * math.cos(a), y + s * 0.35 * math.sin(a)
-            b = a + side * math.pi / 4
-            cv2.line(img, (int(mx), int(my)), (int(mx + s * 0.18 * math.cos(b)), int(my + s * 0.18 * math.sin(b))),
-                     color, 3, cv2.LINE_AA)
-    cv2.circle(img, (x, y), max(3, int(s * 0.08)), color, -1, cv2.LINE_AA)
-
-
-def icon_note(img, c, s, color=CYAN):
-    x, y = c
-    cv2.ellipse(img, (int(x - s * 0.18), int(y + s * 0.38)), (int(s * 0.22), int(s * 0.16)), -20, 0, 360,
-                color, -1, cv2.LINE_AA)
-    cv2.line(img, (int(x + s * 0.02), int(y + s * 0.35)), (int(x + s * 0.02), int(y - s * 0.5)), color, 5, cv2.LINE_AA)
-    _poly(img, [(x + s * 0.02, y - s * 0.52), (x + s * 0.4, y - s * 0.25), (x + s * 0.4, y - s * 0.1),
-                (x + s * 0.02, y - s * 0.32)], color)
-
-
-ICONS = {"piano": icon_piano, "fruit": icon_fruit, "bell": icon_bell, "star": icon_star,
-         "tree": icon_tree, "snowflake": icon_snowflake, "note": icon_note}
-
-
 # -------------------------------------------------------------------- botones
 class Button:
-    def __init__(self, key, label, rect, color=CYAN, sublabel="", icon=None, tag="", hint="", images=()):
-        self.images = images  # imágenes de assets/ que se prueban en orden antes que el icono dibujado
+    def __init__(self, key, label, rect, color=CYAN, sublabel="", image=None, tag="", hint=""):
         self.key = key
         self.label = label
         self.sublabel = sublabel
         self.rect = rect  # (x1, y1, x2, y2)
         self.color = color
-        self.icon = icon
+        self.image = image  # icono de assets/ (opcional)
         self.tag = tag    # etiqueta pequeña arriba a la derecha (p.ej. "Tranquila")
         self.hint = hint  # tecla de atajo, se muestra abajo a la izquierda
 
@@ -382,13 +278,9 @@ class Button:
         if active:  # se va rellenando de verde mientras mantiene el dedo
             rounded_rect(img, (x1, y1, x1 + max(48, (x2 - x1) * min(progress, 1.0)), y2), 24, GREEN, 0.35)
         cx, h = (x1 + x2) // 2, y2 - y1
-        from rehab import assets  # aquí para evitar una importación circular
-        image = next((name for name in self.images if assets.available(name)), None)
-        has_icon = image is not None or self.icon in ICONS
-        if image is not None:
-            assets.draw(img, image, (cx, y1 + int(h * 0.30)), int((x2 - x1) * 0.6), int(h * 0.42))
-        elif has_icon:
-            ICONS[self.icon](img, (cx, y1 + int(h * 0.30)), int(min(h * 0.22, 60)))
+        from rehab import assets  # aquí dentro para evitar una importación circular
+        has_icon = self.image is not None and assets.draw(img, self.image, (cx, y1 + int(h * 0.30)),
+                                                          int((x2 - x1) * 0.6), int(h * 0.42))
         label_y = y1 + int(h * (0.68 if has_icon else 0.5)) + (0 if self.sublabel else 12)
         label_scale = 1.15 if h > 150 else 0.9
         tw, _ = text_size(self.label, label_scale)
@@ -408,8 +300,8 @@ class Button:
 class DwellSelector:
     """Pulsa un botón cuando el puntero se queda encima `dwell_time` segundos.
 
-    Es tolerante: si el puntero se sale un instante del botón (temblor de la
-    mano o un frame en que MediaPipe no la ve), no se pierde lo que llevaba cargado.
+    Si el puntero se sale un momento (porque tiembla la mano o MediaPipe la
+    pierde en algún frame), no se pierde lo que llevaba cargado.
     """
 
     GRACE = 0.4     # s que puede salirse del botón sin perder la carga

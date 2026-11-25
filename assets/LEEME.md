@@ -1,15 +1,8 @@
 # Imágenes del juego
 
-Deja aquí imágenes **PNG** con el nombre exacto de la tabla y el juego las usará automáticamente al arrancar. No hay que tocar código.
+Aquí están las imágenes que usa el juego. Las generé con IA (los prompts están en [PROMPTS.md](PROMPTS.md)) y les quité el fondo antes de meterlas aquí, así que todas menos los fondos son **PNG con transparencia**.
 
-Todas son **opcionales**: si falta alguna, el juego la dibuja por código (por eso funciona aunque esta carpeta esté vacía). Puedes poner solo las que quieras.
-
-Los prompts para generarlas con IA, todas con el mismo estilo, están en [PROMPTS.md](PROMPTS.md).
-
-**Recomendaciones:**
-- Fondo **transparente** (PNG con canal alfa) en todo lo que no sea un fondo de pantalla. Si la imagen no tiene transparencia pero su fondo es de **un color liso** (por ejemplo magenta #FF00FF), el juego lo quita solo.
-- La imagen se escala sola. Los tamaños son orientativos: mejor más grande que más pequeña.
-- Usa imágenes propias o con licencia libre (por ejemplo CC0) y cítalas en el README del proyecto.
+Si quieres cambiar alguna, basta con poner otra con el **mismo nombre**: el juego la escala sola. Si falta alguna, el juego sigue funcionando pero no la dibuja (sale un aviso en la consola).
 
 ## Trineo volador (modo hombro)
 
@@ -26,8 +19,8 @@ Los prompts para generarlas con IA, todas con el mismo estilo, están en [PROMPT
 | Archivo | Qué es | Tamaño orientativo | Notas |
 |---|---|---|---|
 | `logo.png` | Logo "Rehab Arcade" | 800 x 200 | Sustituye al título en texto. |
-| `fondo_menu.png` | Fondo de los menús | 1280 x 720 | Si no está, se usa el paisaje nevado animado. |
-| `icono_hombro.png` | Icono del botón Hombro | 256 x 256 | Si no está, se usa `trineo.png`. |
+| `fondo_menu.png` | Fondo de los menús | 1280 x 720 | Si no está, se usa el paisaje nevado animado del trineo. |
+| `icono_hombro.png` | Icono del botón Hombro | 256 x 256 | |
 | `icono_mano.png` | Icono del botón Mano | 256 x 256 | |
 | `icono_jingle.png` | Icono de *Jingle Bells* | 256 x 256 | |
 | `icono_nochedepaz.png` | Icono de *Noche de paz* | 256 x 256 | |

@@ -1,12 +1,12 @@
-"""Clase base común a los dos minijuegos.
+"""Clase base de los minijuegos.
 
-Todos los minijuegos pasan por las mismas fases:
+Los dos juegos pasan por las mismas fases:
 
     intro -> calibracion -> cuenta atras -> juego -> (terminado)
 
-Cada modo solo implementa lo suyo (calibrar, jugar y resumir resultados);
-el flujo de fases, la cuenta atrás y la barra superior son comunes. Así cada
-persona del grupo puede trabajar en su archivo sin pisar al otro.
+Así cada juego solo hace lo suyo (calibrar, jugar y sacar los resultados) y
+lo común (cambiar de fase, la cuenta atrás, la barra de arriba) está aquí una
+sola vez.
 """
 from datetime import datetime
 

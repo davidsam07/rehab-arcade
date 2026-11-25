@@ -1,16 +1,13 @@
-"""Música y efectos de sonido, generados con numpy (sin archivos de audio).
+"""Música y sonidos, todo generado con numpy (no hay archivos de audio).
 
-- Piano: cada nota se sintetiza sumando armónicos que se apagan a distinta
-  velocidad (los agudos antes), más un pequeño "golpe" de martillo al
-  principio. Suena bastante más a piano que una onda senoidal pura.
-- Acompañamiento: bajo y acordes de la canción, tocados al mismo tempo que la
-  melodía. El juego los programa con unas décimas de antelación
-  (Mixer.play_in) para que vayan a ritmo aunque la cámara dé algún tirón.
-- Modo hombro: una canción entera (melodía + acompañamiento) renderizada
-  en un bucle que suena de fondo mientras vuela el trineo.
+- Piano: cada nota es una suma de armónicos que se van apagando, más un
+  pequeño "golpe" al principio. No es un piano de verdad, pero da bastante
+  más el pego que una onda senoidal.
+- Acompañamiento: bajo y acordes de la canción al mismo tempo que la melodía.
+- Trineo: la canción entera se renderiza en un bucle que suena de fondo.
 
-Un mezclador (Mixer) suma todo en tiempo real con sounddevice. Si el
-ordenador no tiene audio, el juego sigue sin sonido.
+El Mixer va sumando todo en tiempo real con sounddevice. Si el ordenador no
+tiene audio, el juego sigue funcionando, solo que sin sonido.
 """
 import math
 import threading
@@ -37,13 +34,9 @@ CHORDS = {
     "F": ("F2", ["F4", "A4", "C5"]),
     "G": ("G2", ["D4", "G4", "B4"]),
     "G7": ("G2", ["D4", "F4", "B4"]),
-    "D": ("D3", ["D4", "F#4", "A4"]),
     "D7": ("D3", ["C4", "F#4", "A4"]),
     "E7": ("E3", ["D4", "G#4", "B4"]),
     "Am": ("A2", ["E4", "A4", "C5"]),
-    "Dm": ("D3", ["D4", "F4", "A4"]),
-    "Em": ("E3", ["E4", "G4", "B4"]),
-    "A7": ("A2", ["E4", "G4", "C#5"]),
 }
 
 
@@ -149,14 +142,12 @@ def render_song(song, tempo=1.0):
 class Mixer:
     """Suma en tiempo real la música de fondo y los sonidos que estén sonando.
 
-    Cada sonido ("voz") guarda en qué muestra tiene que empezar. Así se pueden
-    programar sonidos para dentro de unos milisegundos con precisión de muestra,
-    que es lo que hace falta para que el acompañamiento vaya a tempo.
+    Cada sonido guarda en qué muestra tiene que empezar, así puedo programar
+    sonidos para dentro de unos milisegundos y que el acompañamiento vaya a tempo.
 
-    El mezclador también hace de RELOJ del juego de ritmo (now()): contar
-    muestras de audio es más estable que contar frames de la cámara. Y sabe
-    cuánto tarda el sonido en salir por los altavoces (latency), para que las
-    notas que caen lleguen a la línea justo cuando se OYE el pulso.
+    También lo uso como reloj del piano (now()). Probándolo me di cuenta de que
+    el audio de Windows sale con unos 200 ms de retraso y las notas no cuadraban
+    con la música, así que ahora el juego sabe ese retraso (latency) y lo descuenta.
     """
 
     def __init__(self):
@@ -229,13 +220,7 @@ class Mixer:
 
     def play(self, samples, music=False):
         """Suena ya (en el siguiente bloque de audio)."""
-        self.play_in(samples, 0.0, music)
-
-    def play_in(self, samples, delay: float, music=False):
-        """Suena dentro de `delay` segundos. music=True: se calla con la tecla M."""
-        if self.available:
-            with self._lock:
-                self._voices.append([samples, self._clock + int(max(0.0, delay) * SR), music])
+        self.play_at(samples, 0.0, music)
 
     def stop_all(self):
         """Corta la música y los sonidos pendientes (al salir de una partida)."""

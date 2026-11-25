@@ -1,33 +1,30 @@
 """Modo mano: Piano de dedos.
 
-Cómo funciona:
-1. Calibración: el paciente abre la mano y luego hace la pinza pulgar con
-   cada dedo. Así sabemos cuánto puede cerrar y abrir CADA dedo, y ajustamos
-   los umbrales a su mano (un dedo con poca movilidad tiene un umbral más fácil).
-   Si ya se midió en esta sesión, se reutiliza la medición.
-2. Juego: el paciente elige una canción. Las notas caen al ritmo de la música
-   por 4 carriles (índice, corazón, anular, meñique), como en un piano: las
-   notas graves van al índice y las agudas al meñique. Cuando una nota llega a
-   la línea, junta el pulgar con ese dedo. Las notas que van demasiado
-   seguidas para el paciente no caen (solo suenan), así solo hace las que puede.
-   La melodía entera la toca siempre la música, justo a tiempo: la cámara
-   tarda unas décimas en ver la pinza, y si cada acierto hiciera sonar su nota,
-   sonaría siempre un poco tarde y desafinaría el ritmo.
-   Las notas largas tienen cola: hay que MANTENER la pinza hasta que acabe
-   (ejercicio isométrico de fuerza y control de la pinza).
-3. Dificultad adaptativa: si acierta, la canción va más rápido y le tocan más
-   notas; si le cuesta, va más lenta y con más espacio entre notas. Además, los
-   dedos que más fallan reciben más notas para entrenarlos.
+La idea: caen notas como en un piano y hay que juntar el pulgar con el dedo
+que toca (la pinza), que es un ejercicio típico de motricidad fina.
 
-La pinza se mide con MediaPipe Hands: distancia entre la punta del pulgar (4)
-y la punta de cada dedo, dividida por el tamaño de la mano (muñeca 0 ->
-nudillo del corazón 9). Al dividir, da igual lo cerca que esté la mano de la cámara.
+1. Calibración: primero se abre la mano y luego se hace la pinza con cada
+   dedo. Así sé cuánto puede cerrar cada dedo y los umbrales se adaptan a su
+   mano (si un dedo se mueve poco, su umbral es más fácil). Si ya se midió en
+   la sesión, se reutiliza.
+2. Juego: las notas caen al ritmo de la canción por 4 carriles (índice,
+   corazón, anular y meñique), las graves al índice y las agudas al meñique.
+   Las que van demasiado seguidas no caen, solo suenan. Las notas largas hay
+   que mantenerlas (así también se trabaja la fuerza de la pinza).
+3. Dificultad adaptativa: si acierta, la canción va más rápida y caen más
+   notas; si falla, más lenta. Los dedos que más fallan reciben más notas.
 
-El tiempo se cuenta en PULSOS de la canción (no en segundos): las notas, el
-acompañamiento y las líneas de compás se mueven todos con el mismo reloj, así
-que al cambiar el tempo todo sigue cuadrando. Ese reloj es el del audio (no
-el de la cámara) y descuenta el retardo de los altavoces: las notas llegan a
-la línea justo cuando se OYE su pulso.
+La pinza se mide con MediaPipe Hands: distancia de la punta del pulgar (4) a
+la punta de cada dedo, dividida por el tamaño de la mano (muñeca 0 -> nudillo
+del corazón 9), para que dé igual lo cerca que esté la mano de la cámara.
+
+Cosas que fui cambiando al probarlo:
+- Al principio cada acierto tocaba su nota, pero la cámara tarda unas décimas
+  en ver la pinza y siempre sonaba tarde. Ahora la melodía la toca siempre la
+  música a su tiempo y el acierto solo se ve.
+- El tiempo va en PULSOS de la canción y sale del reloj del audio (no de los
+  frames), descontando el retraso de los altavoces. Si no, las notas no
+  cuadraban con la música.
 """
 import bisect
 import math
@@ -207,15 +204,15 @@ class FingerPiano(Minigame):
 
     # --------------------------------------------------------- calibración
     def update_calibration(self, frame, landmarks, dt):
-        """Calibración guiada pensada para personas mayores.
+        """Calibración paso a paso y sin prisa (la primera versión iba demasiado rápida).
 
         Cada paso tiene tres momentos:
-          1. preparar: se explica qué hacer y se iluminan los dedos sobre su mano.
-          2. medir: esperamos a que lo intente y que lo mantenga unos segundos.
-             Si su movilidad no le deja cerrar la pinza, tras un rato medimos
-             igualmente su mejor intento (no queremos que se quede atascado).
+          1. preparar: se explica qué hacer y se marcan los dedos sobre la mano.
+          2. medir: espera a que lo intente y lo mantenga unos segundos. Si no
+             consigue cerrar la pinza, al rato se mide su mejor intento para
+             que no se quede atascado.
           3. bien: mensaje de ánimo y tiempo para soltar la mano.
-        El tiempo solo avanza mientras se ve la mano.
+        El tiempo solo cuenta mientras se ve la mano.
         """
         if self.calibrated:
             return True
@@ -326,13 +323,13 @@ class FingerPiano(Minigame):
     def _update_pinch(self, raw, dt):
         """Decide qué dedo está haciendo la pinza. Devuelve el dedo si acaba de empezar.
 
-        Solo puede haber UN dedo activo: al juntar el pulgar con el meñique, el
-        pulgar pasa cerca del anular, y no queremos que eso cuente como pinza.
-        La pinza se suelta (histéresis) cuando pasa cualquiera de estas cosas:
+        Solo dejo UN dedo activo a la vez, porque al juntar el pulgar con el
+        meñique pasa cerca del anular y contaba los dos.
+        La pinza se suelta cuando:
           - el dedo se abre por encima del umbral OFF,
-          - o se ha separado bastante de su punto más cerrado (así no hace falta
-            abrir la mano del todo: antes el pulgar se quedaba "enganchado"),
-          - o otro dedo está claramente más cerrado: entonces se cambia a ese dedo.
+          - o se separa bastante de su punto más cerrado (antes había que abrir
+            la mano entera y el pulgar se quedaba "enganchado"),
+          - o otro dedo está claramente más cerrado (entonces cambia a ese).
         """
         if self.smooth is None:
             self.smooth = list(raw)
@@ -465,10 +462,11 @@ class FingerPiano(Minigame):
         return best if need(best) > need(lane) + 0.1 else lane
 
     def _schedule_audio(self):
-        """Programa con antelación el acompañamiento y TODA la melodía, en el reloj del audio.
+        """Programa con antelación el acompañamiento y la melodía.
 
-        Se programa "latency" segundos antes de su pulso, que es lo que tarda en
-        salir por los altavoces: así se oye justo cuando la nota llega a la línea.
+        Cada sonido se programa "latency" segundos antes de su pulso (lo que
+        tarda en salir por los altavoces), así se oye justo cuando la nota
+        llega a la línea.
         """
         spb = 60 / self.bpm
         lat = audio.mixer.latency
@@ -581,16 +579,17 @@ class FingerPiano(Minigame):
             cv2.circle(frame, thumb, radius, ui.WHITE, 4, cv2.LINE_AA)
 
     def _draw_hand_view(self, frame, pts, rect):
-        """Mano guía grande: la mano del paciente redibujada en grande, con el dedo que toca iluminado.
+        """Mano guía: la mano del paciente dibujada en grande, con el dedo que toca iluminado.
 
-        Se centra en la palma y se escala con el tamaño de la mano (muñeca -> nudillo del corazón),
-        así se ve siempre igual de grande aunque la mano esté lejos de la cámara.
+        Como la cámara va en pequeño, así se ve bien qué dedo hay que mover.
+        Está centrada en la palma y escalada con el tamaño de la mano, así sale
+        igual de grande aunque la mano esté lejos de la cámara.
         """
         x1, y1, x2, y2 = rect
         ui.rounded_rect(frame, rect, 26, ui.DARK, 0.9, border=ui.RED if pts is None else None)
         cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
         if pts is None:
-            ui.icon_piano(frame, (cx, cy - 30), 70)
+            assets.draw(frame, "icono_mano", (cx, cy - 40), 150, 150)
             ui.put_text(frame, "No veo tu mano", (cx, cy + 62), 0.9, ui.RED, 2, center=True, shadow=False)
             ui.put_text(frame, "Ponla delante", (cx, cy + 100), 0.75, ui.WHITE, 2, center=True, shadow=False)
             ui.put_text(frame, "de la cámara", (cx, cy + 134), 0.75, ui.WHITE, 2, center=True, shadow=False)

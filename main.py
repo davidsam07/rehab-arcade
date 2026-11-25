@@ -1,10 +1,12 @@
-"""Rehab Arcade: juego serio de rehabilitación del miembro superior.
+"""Rehab Arcade - práctica 2 de IPM (visión por computador).
 
-Uso:
+Archivo principal: abre la cámara, enseña el menú y lanza los minijuegos.
+
+Se ejecuta así:
     python main.py --paciente "Nombre"  [--camara 0]
 
-Todo se controla sin tocar el ordenador: los botones se pulsan dejando el
-dedo índice encima un momento. También hay atajos de teclado:
+Todo se puede manejar sin tocar el ordenador (dejando el dedo quieto encima
+de los botones), pero también dejé atajos de teclado para probar más rápido:
     1 / 2   elegir modo en el menú (1-5 para elegir canción)
     ENTER   saltar instrucciones / volver al menú desde resultados
     M       quitar / poner la música
@@ -34,10 +36,10 @@ INDEX_TIP = 8
 
 MENU_BUTTONS = [
     ui.Button("hombro", "Hombro", (int(W * 0.08), int(H * 0.34), int(W * 0.47), int(H * 0.74)),
-              sublabel="Trineo volador: recoge regalos", images=("icono_hombro", "trineo"), color=ui.ORANGE,
+              sublabel="Trineo volador: recoge regalos", image="icono_hombro", color=ui.ORANGE,
               hint="tecla 1"),
     ui.Button("mano", "Mano", (int(W * 0.53), int(H * 0.34), int(W * 0.92), int(H * 0.74)),
-              sublabel="Piano de dedos: toca canciones", icon="piano", images=("icono_mano",), color=ui.CYAN,
+              sublabel="Piano de dedos: toca canciones", image="icono_mano", color=ui.CYAN,
               hint="tecla 2"),
     ui.Button("salir", "Salir", (int(W * 0.42), int(H * 0.80), int(W * 0.58), int(H * 0.91)), color=ui.RED),
 ]
@@ -55,7 +57,7 @@ def _song_buttons():
         for song in songs:
             n = len(buttons) + 1
             buttons.append(ui.Button(song.key, song.title, (x, y, x + cw, y + ch), sublabel=song.subtitle,
-                                     icon=song.icon, tag=song.mood, hint=f"tecla {n}", images=(f"icono_{song.key}",),
+                                     image=f"icono_{song.key}", tag=song.mood, hint=f"tecla {n}",
                                      color=ui.GOLD if song.christmas else ui.CYAN))
             x += cw + gap
     return buttons
@@ -95,13 +97,14 @@ def open_camera(index):
 
 
 class HandPointer:
-    """Puntero de los menús a partir de la punta del dedo índice.
+    """Puntero de los menús (sale de la punta del dedo índice).
 
-    - Zona cómoda: solo se usa el centro de la imagen de la cámara y se estira
-      a toda la pantalla, así se llega a todos los botones sin estirar el brazo
-      (por ejemplo, al botón de abajo estando sentado).
-    - Suavizado: filtra el temblor de la mano y de la detección.
-    - Si la mano se pierde un instante, el puntero se queda donde estaba.
+    Al principio usaba la posición del dedo tal cual y costaba bastante pulsar
+    los botones: el puntero temblaba y para llegar a los de abajo había que
+    bajar mucho la mano. Así que:
+    - solo uso el centro de la imagen de la cámara y lo estiro a toda la pantalla,
+    - lo suavizo un poco para quitar el temblor,
+    - y si la mano se pierde un momento, el puntero se queda donde estaba.
     """
 
     ZONE = (0.15, 0.10, 0.85, 0.72)   # x1, y1, x2, y2 de la imagen (0-1) que se estira a la pantalla
@@ -132,9 +135,10 @@ class HandPointer:
 
 
 def draw_menu_camera(frame, cam, hand, top=False):
-    """Cámara en pequeño con la mano y la zona en la que hay que moverla.
+    """Cámara en pequeño con la mano y la zona donde hay que moverla.
 
-    Va abajo a la derecha; en resultados (top=True) arriba a la derecha, porque abajo están los botones.
+    Normalmente va abajo a la derecha; en resultados la pongo arriba (top=True)
+    porque abajo están los botones.
     """
     ch, cw = cam.shape[:2]
     x1, y1, x2, y2 = HandPointer.ZONE
