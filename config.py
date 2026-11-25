@@ -26,8 +26,12 @@ MIN_VISIBILITY = 0.5
 # Sonido (tecla M para quitar/poner la música durante el juego)
 MUSIC_ENABLED = True
 MUSIC_VOLUME = 0.08       # música de fondo, flojita para no tapar los aciertos
-SFX_VOLUME = 0.30         # notas del piano y sonido al cortar fruta
-AUTO_NOTE_VOLUME = 0.15   # notas de la melodía que toca el ordenador (las que no son del jugador)
+SFX_VOLUME = 0.30         # sonidos sueltos (calibración del piano)
+MELODY_VOLUME = 0.17      # notas de la melodía que le tocan al paciente (un poco más fuertes)
+AUTO_NOTE_VOLUME = 0.14   # resto de notas de la melodía
+# Retardo extra del audio, además del que informa la tarjeta de sonido. Súbelo (p.ej. 0.15)
+# si usas auriculares Bluetooth y notas que la música va por detrás de las notas que caen.
+AUDIO_EXTRA_LATENCY = 0.0
 
 # Aspecto
 SNOW = True               # copos de nieve en los menús y en las canciones navideñas
@@ -86,6 +90,7 @@ class Piano:
     HOLD_MAX_TIME = 3.0       # s: como mucho se pide mantener esto
     HOLD_OK = 0.80            # fracción de la nota que hay que aguantar para que cuente
     AUDIO_LOOKAHEAD = 0.15    # s que se programa el audio por adelantado (para que vaya a tempo)
+    INPUT_LATENCY = 0.10      # s que tarda la cámara + MediaPipe en ver la pinza (se descuenta al juzgar)
     GAME_MIN_TIME = 45.0      # si la canción dura menos, se repite (hasta MAX_REPEATS veces)
     MAX_REPEATS = 3
 

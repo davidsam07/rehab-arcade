@@ -8,9 +8,11 @@ Cómo funciona:
 2. Juego: el paciente elige una canción. Las notas caen al ritmo de la música
    por 4 carriles (índice, corazón, anular, meñique), como en un piano: las
    notas graves van al índice y las agudas al meñique. Cuando una nota llega a
-   la línea, junta el pulgar con ese dedo y suena ESA nota de la canción.
-   Las notas que van demasiado seguidas para el paciente las toca el ordenador,
-   así la melodía nunca se corta y el paciente solo hace las que puede.
+   la línea, junta el pulgar con ese dedo. Las notas que van demasiado
+   seguidas para el paciente no caen (solo suenan), así solo hace las que puede.
+   La melodía entera la toca siempre la música, justo a tiempo: la cámara
+   tarda unas décimas en ver la pinza, y si cada acierto hiciera sonar su nota,
+   sonaría siempre un poco tarde y desafinaría el ritmo.
    Las notas largas tienen cola: hay que MANTENER la pinza hasta que acabe
    (ejercicio isométrico de fuerza y control de la pinza).
 3. Dificultad adaptativa: si acierta, la canción va más rápido y le tocan más
@@ -23,7 +25,9 @@ nudillo del corazón 9). Al dividir, da igual lo cerca que esté la mano de la c
 
 El tiempo se cuenta en PULSOS de la canción (no en segundos): las notas, el
 acompañamiento y las líneas de compás se mueven todos con el mismo reloj, así
-que al cambiar el tempo todo sigue cuadrando.
+que al cambiar el tempo todo sigue cuadrando. Ese reloj es el del audio (no
+el de la cámara) y descuenta el retardo de los altavoces: las notas llegan a
+la línea justo cuando se OYE su pulso.
 """
 import bisect
 import math
@@ -39,8 +43,9 @@ from config import Piano as C
 from rehab import assets, audio, ui
 from rehab.games.base import Minigame
 from rehab.geometry import distance
+from rehab.scene import WinterScene
 from rehab.songs import SONGS, midi, solfege
-from rehab.vision import draw_hand, to_px
+from rehab.vision import HAND_CONNECTIONS, draw_hand, to_px
 
 FINGERS = ["Índice", "Corazón", "Anular", "Meñique"]
 FINGER_KEYS = ["indice", "corazon", "anular", "menique"]
@@ -67,6 +72,7 @@ class Note:
     done: bool = False
     hold_end: float = 0.0   # nota larga: pulso hasta el que hay que mantener la pinza (0 = nota normal)
     holding: bool = False   # el paciente la está manteniendo ahora mismo
+    sounded: bool = False   # su sonido ya está programado
 
 
 class FingerPiano(Minigame):
@@ -112,6 +118,7 @@ class FingerPiano(Minigame):
         self.beat = 0.0
         self.recent = deque(maxlen=C.ADAPT_WINDOW)
         self.rng = random.Random()
+        self._audio_t = None
         self.notes = []
         self._build_timeline()
 
@@ -127,7 +134,7 @@ class FingerPiano(Minigame):
         self.holds_ok = 0
         self.holds_total = 0
         self.effects = []            # animaciones de acierto / fallo
-        self.snow = ui.Snow(35, seed=3) if (config.SNOW and self.song.christmas) else None
+        self.scene = None            # paisaje nevado de fondo (como en el trineo)
 
     # ------------------------------------------------------------- canción
     def _build_timeline(self):
@@ -366,25 +373,29 @@ class FingerPiano(Minigame):
     def on_game_start(self):
         audio.mixer.stop_all()
         self.beat = 0.0
+        self._audio_t = None
 
     def _geometry(self, w, h):
-        x1, x2 = int(w * 0.555), int(w * 0.975)
+        x1, x2 = int(w * 0.45), int(w * 0.975)
         lane_w = (x2 - x1) // 4
         return x1, lane_w, 92, int(h * 0.75), int(h * 0.955)  # x1, ancho, arriba, línea, abajo
 
     def update_game(self, frame, landmarks, dt):
         h, w = frame.shape[:2]
-        if self.snow:
-            self.snow.draw(frame, dt)
 
         # Reloj de la canción (en pulsos). El tempo cambia suave, sin saltos.
         self.tempo += (self.tempo_target - self.tempo) * min(1.0, dt * 0.8)
-        self.beat += dt * self.bpm / 60
+        step = dt
+        if audio.mixer.available:  # reloj del audio: más estable que el de los frames
+            t = audio.mixer.now()
+            step = 0.0 if self._audio_t is None else min(0.25, max(0.0, t - self._audio_t))
+            self._audio_t = t
+        self.beat += step * self.bpm / 60
         self._spawn_notes()
         self._schedule_audio()
 
         self.draw_landmarks(frame, landmarks)
-        onset = None
+        onset, pts = None, None
         if landmarks is None:
             self.smooth = None
             self.pinched = [False] * 4   # si se pierde la mano, la pinza se suelta
@@ -392,13 +403,19 @@ class FingerPiano(Minigame):
             ratios, pts = pinch_ratios(landmarks, w, h)
             onset = self._update_pinch(ratios, dt)
             self._draw_hand_overlay(frame, pts)
+        # La cámara se queda en pequeño en una esquina; el resto de la pantalla es el juego
+        cam = cv2.resize(frame, (int(w * 0.225), int(h * 0.225)), interpolation=cv2.INTER_AREA)
+        if self.scene is None:
+            self.scene = WinterScene(w, h)
+        self.scene.draw(frame, dt, speed=12.0, snow=self.song.christmas)
 
         if onset is not None:
             self._on_pinch(onset)
         self._update_hold()
         window = C.HIT_WINDOW * self.bpm / 60
+        seen_beat = self.beat - C.INPUT_LATENCY * self.bpm / 60
         for note in self.notes:
-            if note.playable and not note.done and not note.holding and self.beat > note.beat + window:
+            if note.playable and not note.done and not note.holding and seen_beat > note.beat + window:
                 note.done = True
                 self.misses[note.lane] += 1
                 self.combo = 0
@@ -407,9 +424,9 @@ class FingerPiano(Minigame):
         self.notes = [n for n in self.notes if not n.done]
 
         self._draw_piano(frame, dt)
+        self._draw_hand_view(frame, pts, (24, 180, int(w * 0.42), int(h * 0.72)))
+        self._draw_camera(frame, cam, (24, int(h * 0.74)))
         self._draw_next_finger(frame)
-        if landmarks is None:  # al final, para que no lo tape el piano
-            self.warn_not_detected(frame, "No veo tu mano: ponla delante de la cámara")
         if self.beat >= self.end_beat + 1:
             self.finished = True
 
@@ -448,38 +465,51 @@ class FingerPiano(Minigame):
         return best if need(best) > need(lane) + 0.1 else lane
 
     def _schedule_audio(self):
-        """Programa con unas décimas de antelación el acompañamiento y las notas del ordenador."""
+        """Programa con antelación el acompañamiento y TODA la melodía, en el reloj del audio.
+
+        Se programa "latency" segundos antes de su pulso, que es lo que tarda en
+        salir por los altavoces: así se oye justo cuando la nota llega a la línea.
+        """
         spb = 60 / self.bpm
-        horizon = self.beat + C.AUDIO_LOOKAHEAD / spb
+        lat = audio.mixer.latency
+        now = audio.mixer.now()
+        horizon = self.beat + (C.AUDIO_LOOKAHEAD + lat) / spb
+
+        def when(beat):
+            return now + (beat - self.beat) * spb - lat
+
         while self.acc_i < len(self.accomp) and self.accomp[self.acc_i][0] <= horizon:
             beat, sound = self.accomp[self.acc_i]
-            audio.mixer.play_in(sound, (beat - self.beat) * spb, music=True)
+            audio.mixer.play_at(sound, when(beat), music=True)
             self.acc_i += 1
         for note in self.notes:
-            if not note.playable and not note.done and note.beat <= horizon:
-                audio.mixer.play_in(audio.piano_note(note.pitch, config.AUTO_NOTE_VOLUME),
-                                    (note.beat - self.beat) * spb, music=True)
-                note.done = True
+            if not note.sounded and note.beat <= horizon:
+                volume = config.MELODY_VOLUME if note.playable else config.AUTO_NOTE_VOLUME
+                audio.mixer.play_at(audio.piano_note(note.pitch, volume), when(note.beat), music=True)
+                note.sounded = True
+                if not note.playable:
+                    note.done = True
 
     def _on_pinch(self, lane):
         window = C.HIT_WINDOW * self.bpm / 60
+        # La pinza ocurrió un poco antes de que la cámara la viera: descontamos ese retardo
+        seen_beat = self.beat - C.INPUT_LATENCY * self.bpm / 60
         candidates = [n for n in self.notes if n.playable and n.lane == lane and not n.done and not n.holding
-                      and abs(self.beat - n.beat) <= window]
+                      and abs(seen_beat - n.beat) <= window]
         if not candidates:
             self.wrong[lane] += 1
             return
-        note = min(candidates, key=lambda n: abs(self.beat - n.beat))
+        note = min(candidates, key=lambda n: abs(seen_beat - n.beat))
         if note.hold_end:
             note.holding = True      # nota larga: ahora hay que mantenerla
             self.holding_note = note
         else:
             note.done = True
-        offset = (self.beat - note.beat) * 60 / self.bpm
+        offset = (seen_beat - note.beat) * 60 / self.bpm
         self.hits[lane] += 1
         self.offsets.append(offset)
         self.combo += 1
         self.best_combo = max(self.best_combo, self.combo)
-        audio.mixer.play(audio.piano_note(note.pitch, config.SFX_VOLUME))
         perfect = abs(offset) <= C.PERFECT_WINDOW
         if note.hold_end:
             self.effects.append({"lane": lane, "text": "¡Mantén!", "color": ui.CYAN, "t": 0.0, "ring": True,
@@ -503,7 +533,6 @@ class FingerPiano(Minigame):
         self.holds_total += 1
         self.holds_ok += ok
         if ok:
-            audio.mixer.play(audio.chime(4))
             self.effects.append({"lane": note.lane, "text": "¡Aguantado!", "color": ui.YELLOW, "t": 0.0,
                                  "ring": True})
         else:
@@ -551,6 +580,67 @@ class FingerPiano(Minigame):
             cv2.circle(frame, tuple(map(int, pts[TIPS[nxt.lane]])), radius, LANE_COLORS[nxt.lane], 5, cv2.LINE_AA)
             cv2.circle(frame, thumb, radius, ui.WHITE, 4, cv2.LINE_AA)
 
+    def _draw_hand_view(self, frame, pts, rect):
+        """Mano guía grande: la mano del paciente redibujada en grande, con el dedo que toca iluminado.
+
+        Se centra en la palma y se escala con el tamaño de la mano (muñeca -> nudillo del corazón),
+        así se ve siempre igual de grande aunque la mano esté lejos de la cámara.
+        """
+        x1, y1, x2, y2 = rect
+        ui.rounded_rect(frame, rect, 26, ui.DARK, 0.9, border=ui.RED if pts is None else None)
+        cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
+        if pts is None:
+            ui.icon_piano(frame, (cx, cy - 30), 70)
+            ui.put_text(frame, "No veo tu mano", (cx, cy + 62), 0.9, ui.RED, 2, center=True, shadow=False)
+            ui.put_text(frame, "Ponla delante", (cx, cy + 100), 0.75, ui.WHITE, 2, center=True, shadow=False)
+            ui.put_text(frame, "de la cámara", (cx, cy + 134), 0.75, ui.WHITE, 2, center=True, shadow=False)
+            return
+        size = distance(pts[WRIST], pts[MIDDLE_MCP]) or 1.0
+        scale = (y2 - y1) * 0.36 / size
+        palm = np.mean([pts[i] for i in (0, 5, 9, 13, 17)], axis=0)
+        ox, oy = cx, int(y1 + (y2 - y1) * 0.70)
+
+        def P(i):
+            return int(ox + (pts[i][0] - palm[0]) * scale), int(oy + (pts[i][1] - palm[1]) * scale)
+
+        # Palma rellena y dedos gruesos (como un guante)
+        palm_poly = np.array([P(i) for i in (0, 1, 5, 9, 13, 17)], np.int32)
+        cv2.fillPoly(frame, [palm_poly], (95, 80, 72), cv2.LINE_AA)
+        for a, b in HAND_CONNECTIONS:
+            cv2.line(frame, P(a), P(b), (205, 195, 190), 16, cv2.LINE_AA)
+        for a, b in HAND_CONNECTIONS:
+            cv2.line(frame, P(a), P(b), (150, 140, 135), 2, cv2.LINE_AA)
+
+        nxt = self._next_note()
+        hold = self.holding_note
+        target = hold.lane if hold is not None else (nxt.lane if nxt is not None else None)
+        thumb = P(THUMB_TIP)
+        for i in range(4):
+            tip = P(TIPS[i])
+            if self.pinched[i]:
+                cv2.line(frame, thumb, tip, LANE_COLORS[i], 10, cv2.LINE_AA)
+            cv2.circle(frame, tip, 17 if self.pinched[i] else 13, LANE_COLORS[i], -1, cv2.LINE_AA)
+            cv2.circle(frame, tip, 17 if self.pinched[i] else 13, ui.WHITE, 2, cv2.LINE_AA)
+        cv2.circle(frame, thumb, 14, ui.WHITE, -1, cv2.LINE_AA)
+        if target is not None:  # el dedo que toca: anillos que laten y su nombre al lado
+            tip = P(TIPS[target])
+            r = int(26 + 7 * math.sin(self.beat * math.pi * 2))
+            cv2.circle(frame, tip, r, LANE_COLORS[target], 5, cv2.LINE_AA)
+            cv2.circle(frame, thumb, r, ui.WHITE, 4, cv2.LINE_AA)
+            if hold is None:
+                cv2.line(frame, thumb, tip, LANE_COLORS[target], 2, cv2.LINE_AA)
+            right = tip[0] < cx
+            ui.put_text(frame, FINGERS[target], (tip[0] + (34 if right else -34), tip[1] + 10), 0.8,
+                        LANE_COLORS[target], 2, align="left" if right else "right")
+
+    def _draw_camera(self, frame, cam, pos):
+        """La imagen de la cámara en pequeño, para que el paciente se vea."""
+        x, y = pos
+        ch, cw = cam.shape[:2]
+        ui.rounded_rect(frame, (x - 5, y - 5, x + cw + 5, y + ch + 5), 14, ui.DARK, 0.9, border=ui.WHITE)
+        frame[y:y + ch, x:x + cw] = cam
+        ui.put_text(frame, "Tú", (x + 12, y + 30), 0.7, ui.WHITE, 2)
+
     def _draw_next_finger(self, frame):
         """Tarjeta arriba a la izquierda: qué dedo toca ahora (o un aviso si la pinza sigue cerrada)."""
         nxt = self._next_note()
@@ -585,7 +675,7 @@ class FingerPiano(Minigame):
         nxt = self._next_note()
 
         if not assets.draw_rect(frame, "fondo_piano", (x1 - 10, top - 10, x2 + 10, bottom + 10)):
-            ui.rounded_rect(frame, (x1 - 10, top - 10, x2 + 10, bottom + 10), 24, ui.DARKER, 0.72)
+            ui.rounded_rect(frame, (x1 - 10, top - 10, x2 + 10, bottom + 10), 24, ui.DARKER, 1.0)
         for i in range(4):  # carriles con un tinte muy suave de su color
             lx = x1 + i * lane_w
             ui.rounded_rect(frame, (lx + 4, top, lx + lane_w - 4, line_y), 14, LANE_COLORS[i],

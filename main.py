@@ -12,6 +12,7 @@ dedo índice encima un momento. También hay atajos de teclado:
     ESC     volver al menú (o salir si ya estás en el menú)
 """
 import argparse
+import math
 import os
 import sys
 import time
@@ -26,7 +27,7 @@ from rehab.report import chart_image, save_report
 from rehab.scene import WinterScene
 from rehab.session import save_session
 from rehab.songs import SONGS
-from rehab.vision import Tracker, draw_hand, to_px
+from rehab.vision import Tracker, draw_hand
 
 W, H = config.CAMERA_WIDTH, config.CAMERA_HEIGHT
 INDEX_TIP = 8
@@ -93,12 +94,60 @@ def open_camera(index):
     return cap
 
 
-def hand_pointer(tracker, frame):
-    """Detecta la mano. Devuelve (punta del índice en píxeles o None, landmarks o None)."""
-    hand = tracker.detect_hand(frame)
+class HandPointer:
+    """Puntero de los menús a partir de la punta del dedo índice.
+
+    - Zona cómoda: solo se usa el centro de la imagen de la cámara y se estira
+      a toda la pantalla, así se llega a todos los botones sin estirar el brazo
+      (por ejemplo, al botón de abajo estando sentado).
+    - Suavizado: filtra el temblor de la mano y de la detección.
+    - Si la mano se pierde un instante, el puntero se queda donde estaba.
+    """
+
+    ZONE = (0.15, 0.10, 0.85, 0.72)   # x1, y1, x2, y2 de la imagen (0-1) que se estira a la pantalla
+    FOLLOW = 14.0                     # rapidez del suavizado (1/s)
+    LOST_TIME = 0.5                   # s sin ver la mano antes de quitar el puntero
+
+    def __init__(self):
+        self.pos = None
+        self.lost = 0.0
+
+    def update(self, hand, dt):
+        if hand is None:
+            self.lost += dt
+            if self.lost > self.LOST_TIME:
+                self.pos = None
+            return self.pos
+        self.lost = 0.0
+        x1, y1, x2, y2 = self.ZONE
+        tip = hand[INDEX_TIP]
+        x = min(1.0, max(0.0, (tip.x - x1) / (x2 - x1))) * W
+        y = min(1.0, max(0.0, (tip.y - y1) / (y2 - y1))) * H
+        if self.pos is None:
+            self.pos = (x, y)
+        else:
+            k = 1 - math.exp(-self.FOLLOW * dt)
+            self.pos = (self.pos[0] + (x - self.pos[0]) * k, self.pos[1] + (y - self.pos[1]) * k)
+        return self.pos
+
+
+def draw_menu_camera(frame, cam, hand, top=False):
+    """Cámara en pequeño con la mano y la zona en la que hay que moverla.
+
+    Va abajo a la derecha; en resultados (top=True) arriba a la derecha, porque abajo están los botones.
+    """
+    ch, cw = cam.shape[:2]
+    x1, y1, x2, y2 = HandPointer.ZONE
+    cv2.rectangle(cam, (int(x1 * cw), int(y1 * ch)), (int(x2 * cw), int(y2 * ch)), ui.YELLOW, 1, cv2.LINE_AA)
+    if hand is not None:
+        draw_hand(cam, hand, color=(255, 220, 120))
+    x, y = W - cw - 20, (130 if top else H - ch - 20)
+    ui.rounded_rect(frame, (x - 5, y - 5, x + cw + 5, y + ch + 5), 14, ui.DARK, 0.9,
+                    border=ui.WHITE if hand is not None else ui.ORANGE)
+    frame[y:y + ch, x:x + cw] = cam
+    ui.put_text(frame, "Tú", (x + 10, y + 26), 0.6, ui.WHITE, 2)
     if hand is None:
-        return None, None
-    return to_px(hand[INDEX_TIP], W, H), hand
+        ui.put_text(frame, "Levanta la mano", (x + cw // 2, y - 16), 0.65, ui.ORANGE, 2, center=True)
 
 
 def menu_background(frame, scene, dt):
@@ -111,7 +160,7 @@ def menu_background(frame, scene, dt):
 
 
 def footer(frame, text):
-    ui.put_text(frame, text, (W // 2, H - 18), 0.55, (200, 200, 200), 1, center=True)
+    ui.put_text(frame, text, ((W - int(W * 0.2) - 40) // 2, H - 18), 0.55, (200, 200, 200), 1, center=True)
 
 
 def draw_menu(frame, patient, progress):
@@ -139,7 +188,7 @@ def draw_results(frame, game, patient, lines, chart, progress):
     ui.put_text(frame, f"¡Buen trabajo, {patient}!", (W // 2, 62), 1.4, ui.YELLOW, 2, center=True)
     ui.put_text(frame, game.title, (W // 2, 102), 0.75, ui.CYAN, 2, center=True)
     line_h = 36
-    card = (40, 125, W - 40, 125 + 26 + line_h * len(lines))
+    card = (40, 125, W - int(W * 0.2) - 60, 125 + 26 + line_h * len(lines))  # a la derecha va la cámara
     ui.rounded_rect(frame, card, 22, ui.DARK, 0.9)
     for i, line in enumerate(lines):
         ui.put_text(frame, line, (70, card[1] + 44 + i * line_h), 0.68, ui.WHITE, 2, shadow=False)
@@ -157,6 +206,7 @@ def main():
     tracker = Tracker(config.POSE_MODEL, config.HAND_MODEL)
     selector = ui.DwellSelector(config.DWELL_TIME)
     scene = WinterScene(W, H)
+    pointer_filter = HandPointer()
     audio.mixer.start()
 
     cv2.namedWindow(config.WINDOW_NAME, cv2.WINDOW_NORMAL)
@@ -182,7 +232,9 @@ def main():
             choice = None
 
             if state in ("menu", "songs", "results"):
-                pointer, hand = hand_pointer(tracker, frame)
+                hand = tracker.detect_hand(frame)
+                pointer = pointer_filter.update(hand, dt)
+                cam = cv2.resize(frame, (int(W * 0.2), int(H * 0.2)), interpolation=cv2.INTER_AREA)
                 menu_background(frame, scene, dt)
                 buttons = {"menu": MENU_BUTTONS, "songs": SONG_BUTTONS + [BACK_SONGS],
                            "results": [AGAIN_BUTTON, BACK_BUTTON]}[state]
@@ -193,8 +245,7 @@ def main():
                     draw_songs(frame, progress)
                 else:
                     draw_results(frame, game, args.paciente, result_lines, chart, progress)
-                if hand is not None:
-                    draw_hand(frame, hand, color=(230, 230, 230))
+                draw_menu_camera(frame, cam, hand, top=state == "results")
                 ui.draw_pointer(frame, pointer, max(progress.values(), default=0.0))
                 choice = selected.key if selected else None
 

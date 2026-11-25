@@ -366,11 +366,11 @@ class Button:
         self.tag = tag    # etiqueta pequeña arriba a la derecha (p.ej. "Tranquila")
         self.hint = hint  # tecla de atajo, se muestra abajo a la izquierda
 
-    def contains(self, point) -> bool:
+    def contains(self, point, margin=0) -> bool:
         if point is None:
             return False
         x1, y1, x2, y2 = self.rect
-        return x1 <= point[0] <= x2 and y1 <= point[1] <= y2
+        return x1 - margin <= point[0] <= x2 + margin and y1 - margin <= point[1] <= y2 + margin
 
     def draw(self, img, progress=0.0):
         x1, y1, x2, y2 = map(int, self.rect)
@@ -406,12 +406,20 @@ class Button:
 
 
 class DwellSelector:
-    """Pulsa un botón cuando el puntero se queda encima `dwell_time` segundos."""
+    """Pulsa un botón cuando el puntero se queda encima `dwell_time` segundos.
+
+    Es tolerante: si el puntero se sale un instante del botón (temblor de la
+    mano o un frame en que MediaPipe no la ve), no se pierde lo que llevaba cargado.
+    """
+
+    GRACE = 0.4     # s que puede salirse del botón sin perder la carga
+    MARGIN = 18     # px de más alrededor de cada botón
 
     def __init__(self, dwell_time: float):
         self.dwell_time = dwell_time
         self._current = None
         self._since = 0.0
+        self._last_on = 0.0
 
     def reset(self):
         self._current = None
@@ -419,10 +427,16 @@ class DwellSelector:
     def update(self, buttons, pointer, now=None):
         """Devuelve (botón seleccionado o None, {key: progreso})."""
         now = time.monotonic() if now is None else now
-        hovered = next((b for b in buttons if b.contains(pointer)), None)
+        hovered = next((b for b in buttons if b.contains(pointer, self.MARGIN)), None)
         if hovered is None:
-            self._current = None
-            return None, {}
+            current = next((b for b in buttons if b.key == self._current), None)
+            if current is not None and now - self._last_on <= self.GRACE:
+                hovered = current  # se ha salido un momento: seguimos contando
+            else:
+                self._current = None
+                return None, {}
+        else:
+            self._last_on = now
         if self._current != hovered.key:
             self._current = hovered.key
             self._since = now

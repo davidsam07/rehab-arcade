@@ -292,9 +292,6 @@ class SleighFlight(Minigame):
             self.score += points
             self.texts.append([item.x, self._level_to_y(item.level, self.h) - 30, f"+{points}",
                                ui.GOLD if star else ui.WHITE, 0.9])
-            audio.mixer.play(audio.chime(5 if star else (self.combo % 4)))
-            if star:
-                audio.mixer.play_in(audio.chime(6), 0.09)
         else:
             self.misses += 1
             self.combo = 0

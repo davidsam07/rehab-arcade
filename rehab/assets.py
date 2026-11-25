@@ -20,6 +20,8 @@ from rehab import ui
 
 ASSETS_DIR = config.ASSETS_DIR
 _FALLBACKS = {}
+# Imágenes que son fondos completos: a estas no se les quita el fondo
+_OPAQUE = {"fondo_cielo", "fondo_menu", "fondo_piano"}
 
 
 def _fallback(name):
@@ -44,7 +46,47 @@ def load(name: str):
         img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGRA)
     elif img.shape[2] == 3:
         img = cv2.cvtColor(img, cv2.COLOR_BGR2BGRA)
+    if name not in _OPAQUE:
+        if img[..., 3].min() == 255:
+            img = remove_flat_background(img)
+        img = _trim(img)
     return img
+
+
+def _trim(img, pad=4):
+    """Recorta el margen transparente sobrante, para que todas las imágenes ocupen su tamaño real."""
+    ys, xs = np.nonzero(img[..., 3] > 16)
+    if len(xs) == 0:
+        return img
+    h, w = img.shape[:2]
+    return img[max(0, ys.min() - pad):min(h, ys.max() + pad + 1), max(0, xs.min() - pad):min(w, xs.max() + pad + 1)]
+
+
+def remove_flat_background(img, tolerance=32):
+    """Quita un fondo de color liso (p.ej. magenta) a una imagen sin transparencia.
+
+    Las IA de imágenes casi nunca generan PNG transparentes. Si las esquinas
+    son del mismo color, se "rellena" el fondo desde ellas (como el bote de
+    pintura de un editor) y esa zona se vuelve transparente.
+    """
+    bgr = np.ascontiguousarray(img[..., :3])
+    h, w = bgr.shape[:2]
+    corners = [(0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1)]
+    ref = bgr[0, 0].astype(int)
+    seeds = [(x, y) for x, y in corners if np.abs(bgr[y, x].astype(int) - ref).max() <= tolerance]
+    if len(seeds) < 2:  # las esquinas no coinciden: no parece un fondo liso
+        return img
+    mask = np.zeros((h + 2, w + 2), np.uint8)
+    flags = 8 | cv2.FLOODFILL_MASK_ONLY | cv2.FLOODFILL_FIXED_RANGE | (255 << 8)
+    diff = (tolerance,) * 3
+    for x, y in seeds:
+        if mask[y + 1, x + 1] == 0:
+            cv2.floodFill(bgr, mask, (x, y), 0, diff, diff, flags)
+    alpha = np.where(mask[1:-1, 1:-1] > 0, 0, 255).astype(np.uint8)
+    alpha = cv2.GaussianBlur(cv2.erode(alpha, np.ones((3, 3), np.uint8)), (3, 3), 0)  # borde suave, sin halo
+    out = img.copy()
+    out[..., 3] = alpha
+    return out
 
 
 def has(name: str) -> bool:

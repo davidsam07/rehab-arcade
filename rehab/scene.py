@@ -88,11 +88,11 @@ class WinterScene:
     def _mountains(self, rng):
         w, h = self.w, self.h
         prof = _profile(w, h * 0.62, [(2, h * 0.05), (3, h * 0.04), (7, h * 0.015)], rng)
-        img, mask = _layer_from_profile(w, h, prof, (95, 60, 55))
+        img, mask = _layer_from_profile(w, h, prof, (105, 52, 62))   # morado oscuro, a juego con el cielo
         # Cumbres nevadas
         for x in range(w):
             y = prof[x]
-            cv2.line(img, (x, y), (x, y + int(h * 0.025)), (200, 175, 170), 1)
+            cv2.line(img, (x, y), (x, y + int(h * 0.025)), (200, 170, 185), 1)
         return img, mask
 
     def _hills(self, rng):

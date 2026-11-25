@@ -14,6 +14,7 @@ ordenador no tiene audio, el juego sigue sin sonido.
 """
 import math
 import threading
+import time
 from functools import lru_cache
 
 import numpy as np
@@ -82,7 +83,7 @@ def piano(note_or_freq, duration=1.6, volume=1.0, brightness=1.0):
 @lru_cache(maxsize=256)
 def piano_note(note: str, volume: float) -> np.ndarray:
     """Nota de piano cacheada (se genera una vez y se reutiliza)."""
-    return piano(note, 1.6, volume)
+    return piano(note, 1.6, volume, brightness=0.8)  # algo más cálida, para que empaste con la base
 
 
 @lru_cache(maxsize=64)
@@ -151,6 +152,11 @@ class Mixer:
     Cada sonido ("voz") guarda en qué muestra tiene que empezar. Así se pueden
     programar sonidos para dentro de unos milisegundos con precisión de muestra,
     que es lo que hace falta para que el acompañamiento vaya a tempo.
+
+    El mezclador también hace de RELOJ del juego de ritmo (now()): contar
+    muestras de audio es más estable que contar frames de la cámara. Y sabe
+    cuánto tarda el sonido en salir por los altavoces (latency), para que las
+    notas que caen lleguen a la línea justo cuando se OYE el pulso.
     """
 
     def __init__(self):
@@ -159,18 +165,23 @@ class Mixer:
         self._music = None
         self._music_pos = 0
         self._clock = 0             # muestras ya enviadas a la tarjeta de sonido
+        self._block_start = 0       # primera muestra del último bloque enviado
+        self._wall = None           # momento (perf_counter) en que se envió ese bloque
         self._stream = None
         self.music_on = config.MUSIC_ENABLED
         self.available = False
+        self.latency = 0.0          # s desde que se programa un sonido hasta que se oye
 
     def start(self):
         if sd is None:
             print("Aviso: sounddevice no disponible, el juego irá sin sonido.")
             return
         try:
+            # latency="low": en Windows (MME) baja el retardo de ~210 ms a ~90 ms sin cortes
             self._stream = sd.OutputStream(samplerate=SR, channels=1, dtype="float32",
-                                           blocksize=512, callback=self._callback)
+                                           blocksize=512, latency="low", callback=self._callback)
             self._stream.start()
+            self.latency = float(self._stream.latency) + config.AUDIO_EXTRA_LATENCY
             self.available = True
         except Exception as exc:  # noqa: BLE001
             print(f"Aviso: no se pudo abrir el audio ({exc}). El juego irá sin sonido.")
@@ -197,9 +208,24 @@ class Mixer:
                 if begin + len(data) > end:
                     alive.append(voice)
             self._voices = alive
-            self._clock = end
+            self._block_start, self._clock = start, end
+            self._wall = time.perf_counter()
         np.clip(buf, -1.0, 1.0, out=buf)
         outdata[:, 0] = buf
+
+    def now(self) -> float:
+        """Reloj del audio en segundos (continuo: se interpola entre bloque y bloque)."""
+        with self._lock:
+            base, wall, ahead = self._block_start / SR, self._wall, (self._clock - self._block_start) / SR
+        if wall is None:
+            return 0.0
+        return base + min(time.perf_counter() - wall, 2 * ahead)
+
+    def play_at(self, samples, when: float, music=False):
+        """Programa un sonido en el instante `when` del reloj now() (si ya pasó, suena enseguida)."""
+        if self.available:
+            with self._lock:
+                self._voices.append([samples, max(self._clock, int(when * SR)), music])
 
     def play(self, samples, music=False):
         """Suena ya (en el siguiente bloque de audio)."""

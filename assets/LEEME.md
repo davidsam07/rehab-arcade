@@ -4,8 +4,10 @@ Deja aquí imágenes **PNG** con el nombre exacto de la tabla y el juego las usa
 
 Todas son **opcionales**: si falta alguna, el juego la dibuja por código (por eso funciona aunque esta carpeta esté vacía). Puedes poner solo las que quieras.
 
+Los prompts para generarlas con IA, todas con el mismo estilo, están en [PROMPTS.md](PROMPTS.md).
+
 **Recomendaciones:**
-- Fondo **transparente** (PNG con canal alfa) en todo lo que no sea un fondo de pantalla.
+- Fondo **transparente** (PNG con canal alfa) en todo lo que no sea un fondo de pantalla. Si la imagen no tiene transparencia pero su fondo es de **un color liso** (por ejemplo magenta #FF00FF), el juego lo quita solo.
 - La imagen se escala sola. Los tamaños son orientativos: mejor más grande que más pequeña.
 - Usa imágenes propias o con licencia libre (por ejemplo CC0) y cítalas en el README del proyecto.
 
