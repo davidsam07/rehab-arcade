@@ -116,6 +116,7 @@ class FingerPiano(Minigame):
         self.recent = deque(maxlen=C.ADAPT_WINDOW)
         self.rng = random.Random()
         self._audio_t = None
+        self._audio_stall = 0.0
         self.notes = []
         self._build_timeline()
 
@@ -371,6 +372,7 @@ class FingerPiano(Minigame):
         audio.mixer.stop_all()
         self.beat = 0.0
         self._audio_t = None
+        self._audio_stall = 0.0
 
     def _geometry(self, w, h):
         x1, x2 = int(w * 0.45), int(w * 0.975)
@@ -387,6 +389,11 @@ class FingerPiano(Minigame):
             t = audio.mixer.now()
             step = 0.0 if self._audio_t is None else min(0.25, max(0.0, t - self._audio_t))
             self._audio_t = t
+            # Si el audio se corta (cambias de altavoz, se desconectan los auriculares...)
+            # su reloj se para y la canción se quedaba congelada. Entonces seguimos con el normal.
+            self._audio_stall = self._audio_stall + dt if step == 0.0 else 0.0
+            if self._audio_stall > 0.2:
+                step = dt
         self.beat += step * self.bpm / 60
         self._spawn_notes()
         self._schedule_audio()
